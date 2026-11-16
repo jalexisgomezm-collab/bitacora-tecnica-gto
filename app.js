@@ -136,7 +136,7 @@ async function iniciar() {
   if (!p || !p.activo) { await sb.auth.signOut(); return pantallaIngreso('Tu usuario no está activo. Consulta con el supervisor.'); }
   YO = p; CACHE = { ot: null, perfiles: null };
   const links = [['#/', 'Mi día'], ['#/ot', 'OT / PI'], ['#/serie', 'Historial por serie'], ['#/reporte', 'Reporte']];
-  if (esSup()) links.push(['#/revision', 'Revisión'], ['#/personal', 'Personal']);
+  if (esSup()) links.push(['#/informes', 'Informes técnicos'], ['#/revision', 'Revisión'], ['#/personal', 'Personal']);
   $('#nav').innerHTML = links.map(([h, t]) => `<a href="${h}">${t}</a>`).join('');
   $('#who').innerHTML = `<span>${esc(titleCase(nombreCorto(p.nombre)))} · ${esc(p.rol)}</span><button class="sm" id="salir">Salir</button>`;
   $('#salir').onclick = async () => { await sb.auth.signOut(); YO = null; location.hash = '#/'; pantallaIngreso(); };
@@ -154,6 +154,7 @@ function router() {
   if (ruta === 'ot') return listaOT();
   if (ruta === 'serie') return vistaSerie(decodeURIComponent(id || ''));
   if (ruta === 'reporte') return vistaReporte(id);
+  if (ruta === 'informes' && esSup()) return vistaInformes();
   if (ruta === 'revision' && esSup()) return vistaRevision();
   if (ruta === 'personal' && esSup()) return vistaPersonal();
   return miDia(id);
@@ -306,7 +307,7 @@ async function vistaOT(id) {
   const per = await cargarPerfiles(); const ots = await cargarOT(); const otMap = Object.fromEntries(ots.map(o => [o.id, o])); const o = otMap[id];
   if (!o) { $('#app').innerHTML = '<div class="card">OT no encontrada.</div>'; return; }
   const [{ data: comps }, { data: infs }, { data: avs }] = await Promise.all([
-    sb.from('componentes').select('*').eq('ot_id', id), sb.from('informes').select('*').eq('ot_id', id).order('numero'),
+    sb.from('componentes').select('*').eq('ot_id', id), esSup() ? sb.from('informes').select('*').eq('ot_id', id).order('numero') : Promise.resolve({ data: [] }),
     sb.from('avances').select('*').eq('ot_id', id).order('fecha', { ascending: false }).order('created_at', { ascending: false })]);
   const fotos = await fotosFirmadas(avs || []);
   const horas = (avs || []).reduce((s, a) => s + (+a.horas || 0), 0);
@@ -314,7 +315,7 @@ async function vistaOT(id) {
    <div class="muted">${esc(o.cliente || (o.clase === 'INTERNO' ? 'Proyecto interno' : ''))} · ${esc(o.tipo || '')} · ${esc(o.estado_operativo || o.estado || '')}</div>
    <div class="kpis" style="margin-top:10px"><div class="kpi"><b>${(avs || []).length}</b>registros</div><div class="kpi"><b>${horas.toFixed(1)}</b>horas</div><div class="kpi"><b>${new Set((avs || []).map(a => a.tecnico_id)).size}</b>técnicos</div></div>
    <h2>Equipos / componentes</h2><div class="card" style="padding:0;overflow:auto">${(comps || []).length ? `<table><thead><tr><th>Descripción</th><th>N° parte</th><th>N° serie</th></tr></thead><tbody>${comps.map(c => `<tr><td>${esc([c.descripcion, c.marca, c.modelo].filter(Boolean).join(' '))}</td><td class="mono">${esc(c.numero_parte || '')}</td><td>${c.numero_serie ? `<a class="mono" href="#/serie/${encodeURIComponent(c.numero_serie)}">${esc(c.numero_serie)}</a>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="muted" style="padding:10px">Sin componentes registrados en el Maestro.</div>'}</div>
-   <h2>Informes técnicos</h2><div class="card" style="overflow:auto">${tablaInformes(infs || [], false)}</div>
+   ${esSup() ? `<h2>Informes técnicos</h2><div class="card" style="overflow:auto">${tablaInformes(infs || [], false)}</div>` : ''}
    <h2>Historial de trabajos</h2><div class="no-print" style="margin-bottom:8px"><button class="pri" id="nuevo">+ Registrar avance en esta OT</button></div><div id="tl">`;
   let dia = null;
   for (const a of (avs || [])) { if (a.fecha !== dia) { dia = a.fecha; html += `<div class="dia">${fdate(dia)}</div>`; } html += tarjeta(a, per, otMap, fotos); }
@@ -337,14 +338,38 @@ async function vistaSerie(serie) {
     sb.from('componentes').select('*').ilike('numero_serie', `%${s}%`),
     sb.from('avances').select('*').ilike('numero_serie', `%${s}%`).order('fecha', { ascending: false })]);
   const otIds = [...new Set([...(comps || []).map(c => c.ot_id), ...(avs || []).map(a => a.ot_id)])];
-  const { data: infs } = otIds.length ? await sb.from('informes').select('*').in('ot_id', otIds).order('fecha', { ascending: false }) : { data: [] };
+  const { data: infs } = (otIds.length && esSup()) ? await sb.from('informes').select('*').in('ot_id', otIds).order('fecha', { ascending: false }) : { data: [] };
   const fotos = await fotosFirmadas(avs || []);
-  let html = `<div class="kpis"><div class="kpi"><b>${otIds.length}</b>OT / ingresos</div><div class="kpi"><b>${(avs || []).length}</b>trabajos registrados</div><div class="kpi"><b>${(infs || []).length}</b>informes técnicos</div></div>`;
+  let html = `<div class="kpis"><div class="kpi"><b>${otIds.length}</b>OT / ingresos</div><div class="kpi"><b>${(avs || []).length}</b>trabajos registrados</div>${esSup() ? `<div class="kpi"><b>${(infs || []).length}</b>informes técnicos</div>` : ''}</div>`;
   html += `<h2>Ingresos del equipo</h2><div class="card" style="padding:0;overflow:auto">${otIds.length ? `<table><thead><tr><th>OT</th><th>Servicio</th><th>Cliente</th><th>Equipo</th></tr></thead><tbody>${otIds.map(i => { const o = otMap[i] || {}; const c = (comps || []).find(x => x.ot_id === i); return `<tr class="click" onclick="location.hash='#/ot/${i}'"><td class="mono">${esc(o.numero || '')}</td><td>${esc(o.nombre || '')}</td><td>${esc(o.cliente || '')}</td><td>${esc(c ? [c.descripcion, c.numero_serie].filter(Boolean).join(' · ') : '')}</td></tr>`; }).join('')}</tbody></table>` : '<div class="muted" style="padding:10px">No se encontró ese N° de serie.</div>'}</div>`;
-  html += `<h2>Informes técnicos de esos ingresos</h2><div class="card" style="overflow:auto">${tablaInformes(infs || [], true, otMap)}</div>`;
+  if (esSup()) html += `<h2>Informes técnicos de esos ingresos</h2><div class="card" style="overflow:auto">${tablaInformes(infs || [], true, otMap)}</div>`;
   html += `<h2>Trabajos realizados</h2><div id="tl">${(avs || []).map(a => tarjeta(a, per, otMap, fotos, { fecha: true, soloLectura: true })).join('') || '<div class="card muted">Sin trabajos registrados en la bitácora.</div>'}</div>`;
   $('#s-res').innerHTML = html;
   $('#s-res').querySelectorAll('[data-pdf]').forEach(b => b.onclick = () => abrirInforme(b.dataset.pdf));
+}
+
+// ---------- informes técnicos (solo supervisor / gerencia) ----------
+let INFS = null;
+async function vistaInformes() {
+  $('#app').innerHTML = '<h1>Informes técnicos</h1><div class="card muted">Cargando…</div>';
+  const ots = await cargarOT(); const otMap = Object.fromEntries(ots.map(o => [o.id, o]));
+  if (!INFS) { const { data, error } = await sb.from('informes').select('*').order('fecha', { ascending: false }).order('numero', { ascending: false }).limit(5000); if (error) { $('#app').innerHTML = '<div class="card">' + esc(error.message) + '</div>'; return; } INFS = data || []; }
+  const anios = [...new Set(INFS.map(i => (i.fecha || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+  const tipos = [...new Set(INFS.map(i => i.tipo).filter(Boolean))].sort();
+  $('#app').innerHTML = `<h1>Informes técnicos</h1>
+   <div class="muted" style="margin-bottom:8px">Informes emitidos por GTO (todos los años). Busca por N° de informe, cliente, equipo, N° de serie u OT y pulsa "Ver PDF".</div>
+   <div class="card row no-print"><div style="flex:3 1 260px"><label>Buscar</label><input id="i-q" placeholder="Ej. 187, Shougang, ACS2000, 2143001349, OT-2026-0019"></div>
+    <div><label>Año</label><select id="i-a"><option value="">Todos</option>${anios.map(a => `<option>${a}</option>`).join('')}</select></div>
+    <div><label>Tipo</label><select id="i-t"><option value="">Todos</option>${tipos.map(t => `<option>${esc(t)}</option>`).join('')}</select></div></div>
+   <div id="i-k" class="muted" style="margin:8px 0"></div><div class="card" style="overflow:auto;padding:0" id="i-res"></div>`;
+  const pintar = () => {
+    const q = $('#i-q').value.trim().toUpperCase(), a = $('#i-a').value, t = $('#i-t').value;
+    const lista = INFS.filter(i => (!a || (i.fecha || '').startsWith(a)) && (!t || i.tipo === t) && (!q || [i.numero, i.titulo, i.cliente, i.tipo, otMap[i.ot_id]?.numero, otMap[i.ot_id]?.nombre, ...(i.archivos || []).map(x => x.nombre || x.path)].join(' ').toUpperCase().includes(q)));
+    $('#i-k').textContent = `${lista.length} de ${INFS.length} informes`;
+    $('#i-res').innerHTML = lista.length ? `<table><thead><tr><th>N°</th><th>Tipo</th><th>Título</th><th>Cliente</th><th>OT</th><th>Fecha</th><th></th></tr></thead><tbody>${lista.slice(0, 300).map(i => `<tr><td class="mono">${esc(i.numero || '')}</td><td>${esc(i.tipo || '')}</td><td>${esc(i.titulo || '')}</td><td>${esc(i.cliente || '')}</td><td class="mono">${i.ot_id && otMap[i.ot_id] ? `<a href="#/ot/${i.ot_id}">${esc(otMap[i.ot_id].numero)}</a>` : ''}</td><td style="white-space:nowrap">${i.fecha ? fdate(i.fecha) : ''}</td><td style="white-space:nowrap">${(i.archivos || []).map((x, n) => `<button class="sm" data-pdf="${esc(x.path)}">Ver PDF${(i.archivos.length > 1) ? ' ' + (n + 1) : ''}</button>`).join(' ')}</td></tr>`).join('')}</tbody></table>${lista.length > 300 ? '<div class="muted" style="padding:10px">Se muestran 300; afina la búsqueda.</div>' : ''}` : '<div class="muted" style="padding:10px">Sin resultados.</div>';
+    $('#i-res').querySelectorAll('[data-pdf]').forEach(b => b.onclick = () => abrirInforme(b.dataset.pdf));
+  };
+  $('#i-q').oninput = pintar; $('#i-a').onchange = pintar; $('#i-t').onchange = pintar; pintar();
 }
 
 // ---------- reporte ----------
