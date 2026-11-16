@@ -36,3 +36,8 @@ tr.click{cursor:pointer}tr.click:hover td{background:var(--claro)}
 .rep-h{display:none}
 @media (max-width:640px){main{padding:10px}nav a{padding:6px 8px;font-size:13px}.top{padding:6px 10px}}
 @media print{.no-print,.top,button{display:none!important}body{background:#fff}main{max-width:none;padding:0}.card{border:none;padding:0}.rep-h{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--verde);margin-bottom:10px}.rep-h img{height:40px}th{-webkit-print-color-adjust:exact;print-color-adjust:exact}.av{break-inside:avoid}}
+
+.alerta{color:#C0392B;font-size:13px}.alerta-box{border-color:#f3c2bc;background:#fff8f7}.alerta-box h3{font-size:14px;margin:12px 0 6px;color:#1d2430}.alerta-ok{background:var(--claro);color:var(--verde-osc);font-weight:600}
+.sm-in{padding:5px 6px;font-size:13px;min-width:110px}.tabla-in input{padding:6px;font-size:13px;min-width:90px}
+@media print{.alerta-box{border:1px solid #f3c2bc!important;padding:8px!important}}
+.modal-box{max-width:920px}

@@ -7,6 +7,7 @@ const sb = supabase.createClient(SB_URL, SB_KEY);
 const BUCKET = 'bitacora-fotos';
 
 const TIPOS = { RECEPCION: 'Recepción', DIAGNOSTICO: 'Diagnóstico', REPARACION: 'Reparación', MANTENIMIENTO: 'Mantenimiento', PRUEBAS: 'Pruebas', ARMADO: 'Armado', LIMPIEZA: 'Limpieza', FABRICACION: 'Fabricación', EMBALAJE: 'Embalaje', OTRO: 'Otro' };
+const MOTIVOS = { SECADO: 'Secado / curado', ESPERA_MATERIAL: 'Espera de material', ESPERA_REPUESTO: 'Espera de repuesto', VOLUMEN: 'Alto volumen (varias unidades)', RETRABAJO: 'Retrabajo / corrección', PRUEBAS_LARGAS: 'Pruebas de larga duración', OTRO: 'Otro' };
 const ESTADOS = { EN_PROCESO: ['En proceso', ''], TERMINADO: ['Terminado', ''], PENDIENTE: ['Pendiente', 'amb'], DETENIDO: ['Detenido', 'rojo'] };
 
 let YO = null;            // perfil del usuario
@@ -136,7 +137,7 @@ async function iniciar() {
   if (!p || !p.activo) { await sb.auth.signOut(); return pantallaIngreso('Tu usuario no está activo. Consulta con el supervisor.'); }
   YO = p; CACHE = { ot: null, perfiles: null };
   const links = [['#/', 'Mi día'], ['#/ot', 'OT / PI'], ['#/serie', 'Historial por serie'], ['#/reporte', 'Reporte']];
-  if (esSup()) links.push(['#/informes', 'Informes técnicos'], ['#/revision', 'Revisión'], ['#/personal', 'Personal']);
+  if (esSup()) links.push(['#/ingresos', 'Componentes y proyectos'], ['#/informes', 'Informes técnicos'], ['#/revision', 'Revisión'], ['#/personal', 'Personal']);
   $('#nav').innerHTML = links.map(([h, t]) => `<a href="${h}">${t}</a>`).join('');
   $('#who').innerHTML = `<span>${esc(titleCase(nombreCorto(p.nombre)))} · ${esc(p.rol)}</span><button class="sm" id="salir">Salir</button>`;
   $('#salir').onclick = async () => { await sb.auth.signOut(); YO = null; location.hash = '#/'; pantallaIngreso(); };
@@ -155,6 +156,7 @@ function router() {
   if (ruta === 'serie') return vistaSerie(decodeURIComponent(id || ''));
   if (ruta === 'reporte') return vistaReporte(id);
   if (ruta === 'informes' && esSup()) return vistaInformes();
+  if (ruta === 'ingresos' && esSup()) return vistaIngresos(id);
   if (ruta === 'revision' && esSup()) return vistaRevision();
   if (ruta === 'personal' && esSup()) return vistaPersonal();
   return miDia(id);
@@ -174,12 +176,13 @@ function tarjeta(a, per, otMap, fotos, opts = {}) {
   const puede = esSup() || (a.tecnico_id === YO.id && a.fecha >= new Date(Date.now() - 3 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Lima' }));
   return `<div class="av">
     <div class="h"><div><b class="mono">${esc(o.numero || '—')}</b> <span class="muted">${esc(o.nombre || '')}</span></div>
-      <div>${chipEstado(a.estado)} <span class="chip gris">${TIPOS[a.tipo_trabajo] || a.tipo_trabajo}</span> ${a.horas != null ? `<span class="chip gris">${a.horas} h</span>` : ''} ${a.revisado_at ? '<span class="chip" title="Revisado por el supervisor">✔ Revisado</span>' : ''}</div></div>
+      <div>${chipEstado(a.estado)} <span class="chip gris">${TIPOS[a.tipo_trabajo] || a.tipo_trabajo}</span> ${a.horas != null ? `<span class="chip gris">${a.horas} h</span>` : ''} ${a.revisado_at ? '<span class="chip" title="Revisado por el supervisor">✔ Revisado</span>' : ''} ${a.dias_repetidos >= 3 ? `<span class="chip rojo" title="Misma actividad varios días seguidos">⚠ Día ${a.dias_repetidos} seguido</span>` : ''}</div></div>
     <div class="muted">${opts.fecha ? fdate(a.fecha) + ' · ' : ''}${esc(titleCase(t?.nombre || ''))}${a.numero_serie ? ` · Serie <a href="#/serie/${encodeURIComponent(a.numero_serie)}" class="mono">${esc(a.numero_serie)}</a>` : ''}${a.equipo ? ' · ' + esc(a.equipo) : ''}</div>
     <p>${esc(a.actividad).replace(/\n/g, '<br>')}</p>
     ${a.hallazgos ? `<p><span class="k">HALLAZGOS:</span> ${esc(a.hallazgos).replace(/\n/g, '<br>')}</p>` : ''}
     ${a.repuestos ? `<p><span class="k">REPUESTOS / MATERIALES:</span> ${esc(a.repuestos)}</p>` : ''}
     ${a.observaciones ? `<p><span class="k">OBSERVACIONES:</span> ${esc(a.observaciones)}</p>` : ''}
+    ${a.dias_repetidos >= 3 ? `<p class="alerta"><span class="k">MOTIVO DE REPETICIÓN:</span> ${esc(MOTIVOS[a.motivo_repeticion] || a.motivo_repeticion || '—')}${a.motivo_detalle ? ' · ' + esc(a.motivo_detalle) : ''}${a.comentario_supervisor ? `<br><span class="k">COMENTARIO DEL SUPERVISOR:</span> ${esc(a.comentario_supervisor)}` : ''}</p>` : ''}
     ${(fotos[a.id] || []).length ? `<div class="fotos">${fotos[a.id].map(u => `<img src="${esc(u)}" loading="lazy" onclick="window.open(this.src)">`).join('')}</div>` : ''}
     ${puede && !opts.soloLectura ? `<div style="margin-top:8px;display:flex;gap:6px"><button class="sm" data-edit="${a.id}">Editar</button>${(esSup() || a.fecha === hoyLima()) ? `<button class="sm peligro" data-del="${a.id}">Eliminar</button>` : ''}${esSup() && !a.revisado_at ? `<button class="sm" data-rev="${a.id}">Marcar revisado</button>` : ''}</div>` : ''}
   </div>`;
@@ -194,8 +197,19 @@ function enlazarTarjetas(cont, avs, recargar) {
     toast('Registro eliminado'); recargar();
   });
   cont.querySelectorAll('[data-rev]').forEach(b => b.onclick = async () => {
-    const { error } = await sb.from('avances').update({ revisado_por: YO.id, revisado_at: new Date().toISOString() }).eq('id', b.dataset.rev);
-    if (error) return toast(error.message); toast('Marcado como revisado'); recargar();
+    const a = avs.find(x => x.id === b.dataset.rev);
+    const marcar = async (coment) => {
+      const cambios = { revisado_por: YO.id, revisado_at: new Date().toISOString() }; if (coment !== undefined) cambios.comentario_supervisor = coment;
+      const { error } = await sb.from('avances').update(cambios).eq('id', b.dataset.rev);
+      if (error) return toast(error.message, 5000); cerrarModal(); toast('Marcado como revisado'); recargar();
+    };
+    if (!(a && a.dias_repetidos >= 3)) return marcar();
+    modal(`<h1>Revisar actividad repetida</h1><p>Es el <b>día ${a.dias_repetidos} seguido</b> con la misma actividad en este equipo.</p>
+      <p class="muted">Motivo del técnico: <b>${esc(MOTIVOS[a.motivo_repeticion] || '—')}</b>${a.motivo_detalle ? ' · ' + esc(a.motivo_detalle) : ''}</p>
+      <label>Tu comentario (qué verificaste / qué acción se toma) *</label><textarea id="rv-c">${esc(a.comentario_supervisor || '')}</textarea>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button id="rv-x">Cancelar</button><button class="pri" id="rv-ok">Marcar revisado</button></div>`);
+    $('#rv-x').onclick = cerrarModal;
+    $('#rv-ok').onclick = () => { const c = $('#rv-c').value.trim(); if (c.length < 5) return toast('Escribe tu comentario'); marcar(c); };
   });
 }
 
@@ -245,6 +259,10 @@ async function formAvance(a, despues) {
    <div style="margin-top:8px"><label>Hallazgos / fallas encontradas</label><textarea id="a-hal">${esc(a.hallazgos || '')}</textarea></div>
    <div style="margin-top:8px"><label>Repuestos / materiales usados</label><input id="a-rep" value="${esc(a.repuestos || '')}"></div>
    <div style="margin-top:8px"><label>Observaciones</label><input id="a-obs" value="${esc(a.observaciones || '')}"></div>
+   <div id="a-rep-box" class="card alerta-box hidden" style="margin-top:10px"><b id="a-rep-tit">⚠ Actividad repetida</b>
+     <div class="muted" style="margin:4px 0 8px">Registras la misma actividad en este equipo varios días seguidos. Indica por qué continúa (el gerente lo verá en el reporte).</div>
+     <div class="row"><div><label>Motivo *</label><select id="a-mot"><option value="">— Elige —</option>${Object.entries(MOTIVOS).map(([k, v]) => `<option value="${k}" ${k === a.motivo_repeticion ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+     <div style="flex:2 1 300px"><label>Explica (avance logrado, qué falta, qué esperas) *</label><input id="a-motd" value="${esc(a.motivo_detalle || '')}" placeholder="Ej. capa 2 de 3; secado 24 h · 6 de 12 tarjetas"></div></div></div>
    <div style="margin-top:8px"><label>Fotos (se reducen automáticamente)</label><input id="a-fotos" type="file" accept="image/*" multiple capture="environment"></div>
    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end"><button id="a-cancel">Cancelar</button><button class="pri" id="a-ok">Guardar</button></div>`);
   const cargarComp = async () => {
@@ -253,14 +271,23 @@ async function formAvance(a, despues) {
     const { data } = await sb.from('componentes').select('id,descripcion,marca,modelo,numero_serie').eq('ot_id', id);
     (data || []).forEach(c => sel.insertAdjacentHTML('beforeend', `<option value="${c.id}" ${c.id === a.componente_id ? 'selected' : ''} data-serie="${esc(c.numero_serie || '')}">${esc([c.descripcion, c.marca, c.modelo].filter(Boolean).join(' '))}${c.numero_serie ? ' · S/N ' + esc(c.numero_serie) : ''}</option>`));
   };
-  $('#a-ot').onchange = cargarComp; await cargarComp();
-  $('#a-comp').onchange = e => { const s = e.target.selectedOptions[0]?.dataset.serie; if (s) $('#a-serie').value = s; };
+  let racha = (a.dias_repetidos || 1) - 1;
+  const verRacha = async () => {
+    const ot = $('#a-ot').value; if (!ot) return;
+    const { data } = await sb.rpc('racha_previa', { p_tecnico: a.tecnico_id || YO.id, p_fecha: $('#a-fecha').value, p_ot: ot, p_serie: $('#a-serie').value.trim() || null, p_tipo: $('#a-tipo').value, p_excluir: a.id || null });
+    racha = data || 0; const box = $('#a-rep-box'); if (!box) return;
+    box.classList.toggle('hidden', racha < 2); if (racha >= 2) $('#a-rep-tit').textContent = `⚠ Actividad repetida: sería el día ${racha + 1} seguido`;
+  };
+  $('#a-ot').onchange = async () => { await cargarComp(); verRacha(); }; await cargarComp();
+  $('#a-comp').onchange = e => { const s = e.target.selectedOptions[0]?.dataset.serie; if (s) $('#a-serie').value = s; verRacha(); };
+  ['#a-serie', '#a-tipo', '#a-fecha'].forEach(q => $(q).addEventListener('change', verRacha)); verRacha();
   $('#a-cancel').onclick = cerrarModal;
   $('#a-ok').onclick = async () => {
     const reg = { ot_id: $('#a-ot').value, fecha: $('#a-fecha').value, componente_id: $('#a-comp').value || null, numero_serie: $('#a-serie').value.trim() || null,
       equipo: $('#a-equipo').value.trim() || null, tipo_trabajo: $('#a-tipo').value, horas: $('#a-horas').value === '' ? null : +$('#a-horas').value,
-      estado: $('#a-estado').value, actividad: $('#a-act').value.trim(), hallazgos: $('#a-hal').value.trim() || null, repuestos: $('#a-rep').value.trim() || null, observaciones: $('#a-obs').value.trim() || null };
+      estado: $('#a-estado').value, motivo_repeticion: $('#a-mot').value || null, motivo_detalle: $('#a-motd').value.trim() || null, actividad: $('#a-act').value.trim(), hallazgos: $('#a-hal').value.trim() || null, repuestos: $('#a-rep').value.trim() || null, observaciones: $('#a-obs').value.trim() || null };
     if (!reg.ot_id) return toast('Elige la OT o proyecto'); if (!reg.actividad) return toast('Describe el trabajo realizado');
+    if (racha >= 2 && (!reg.motivo_repeticion || (reg.motivo_detalle || '').length < 10)) { $('#a-rep-box').classList.remove('hidden'); $('#a-rep-box').scrollIntoView({ behavior: 'smooth' }); return toast('Actividad repetida: indica el motivo y explica (mínimo 10 caracteres)', 5000); }
     const btn = $('#a-ok'); btn.disabled = true; btn.textContent = 'Guardando…';
     try {
       let id = a.id;
@@ -273,7 +300,11 @@ async function formAvance(a, despues) {
         await sb.from('avance_fotos').insert({ avance_id: id, storage_path: path, nombre: f.name });
       }
       cerrarModal(); toast('Avance guardado'); despues && despues();
-    } catch (e) { toast(e.message, 5000); btn.disabled = false; btn.textContent = 'Guardar'; }
+    } catch (e) {
+      const m = String(e.message || ''); btn.disabled = false; btn.textContent = 'Guardar';
+      if (m.startsWith('REPETIDA:')) { racha = parseInt(m.slice(9)) - 1; $('#a-rep-box').classList.remove('hidden'); $('#a-rep-tit').textContent = `⚠ Actividad repetida: sería el día ${racha + 1} seguido`; $('#a-rep-box').scrollIntoView({ behavior: 'smooth' }); return toast('Indica el motivo de la repetición', 5000); }
+      toast(m, 5000);
+    }
   };
 }
 
@@ -372,6 +403,171 @@ async function vistaInformes() {
   $('#i-q').oninput = pintar; $('#i-a').onchange = pintar; $('#i-t').onchange = pintar; pintar();
 }
 
+// ---------- alertas del reporte ----------
+function htmlAlertas(al) {
+  if (!al) return '';
+  const rep = al.repetidas || [], sa = al.sin_avance || [], sr = al.sin_registro || [];
+  if (!rep.length && !sa.length && !sr.length) return '<div class="card alerta-ok">✔ Sin alertas en el día.</div>';
+  let h = '<div class="card alerta-box"><b style="color:#C0392B">⚠ ALERTAS DEL DÍA</b>';
+  if (rep.length) h += `<h3>Actividades repetidas (3 días o más seguidos)</h3><table><thead><tr><th>Técnico</th><th>OT</th><th>Equipo / serie</th><th>Actividad</th><th>Días</th><th>Motivo</th><th>Comentario supervisor</th></tr></thead><tbody>${rep.map(x => `<tr><td>${esc(titleCase(x.tecnico))}</td><td class="mono">${esc(x.ot)}</td><td>${esc(x.equipo || '')}${x.serie ? '<br><span class="muted">S/N ' + esc(x.serie) + '</span>' : ''}</td><td>${esc(TIPOS[x.tipo] || x.tipo)}: ${esc((x.actividad || '').slice(0, 120))}</td><td><b>${x.dias}</b></td><td>${esc(MOTIVOS[x.motivo] || '—')}${x.detalle ? '<br><span class="muted">' + esc(x.detalle) + '</span>' : ''}</td><td>${esc(x.comentario || 'Pendiente de revisión')}</td></tr>`).join('')}</tbody></table>`;
+  if (sa.length) h += `<h3>OT / PI en curso sin avance (3 días o más)</h3><table><thead><tr><th>OT</th><th>Servicio</th><th>Cliente</th><th>Último registro</th><th>Días sin avance</th><th>Último estado</th></tr></thead><tbody>${sa.map(x => `<tr><td class="mono">${esc(x.ot)}</td><td>${esc(x.nombre || '')}</td><td>${esc(x.cliente || '')}</td><td>${fdate(x.ultimo)}</td><td><b>${x.dias}</b></td><td>${esc(ESTADOS[x.estado]?.[0] || x.estado || '')}</td></tr>`).join('')}</tbody></table>`;
+  if (sr.length) h += `<h3>Técnicos sin registro en el día</h3><p>${sr.map(n => { const m = String(n).match(/^(.*?)( \(.*\))?$/); return esc(titleCase(m[1])) + esc(m[2] || ''); }).join(' · ')}</p>`;
+  return h + '</div>';
+}
+
+// ---------- componentes y proyectos (registro del supervisor → Maestro) ----------
+const TIPOS_OT = { REPARACION: 'Reparación', MANTENIMIENTO: 'Mantenimiento', DIAGNOSTICO: 'Diagnóstico', FABRICACION: 'Fabricación', OTRO: 'Otro' };
+const EST_LAB = { EN_ESPERA: ['En espera', 'gris'], DIAGNOSTICO: ['Diagnóstico', 'amb'], REPARACION: ['Reparación', 'amb'], PRUEBAS: ['Pruebas', 'amb'], TERMINADO: ['Terminado', ''], DESPACHADO: ['Despachado', 'gris'] };
+const EST_ING = { BORRADOR: ['Borrador', 'amb'], ENVIADO: ['En el Maestro', ''], ANULADO: ['Anulado', 'rojo'] };
+const diasDesde = d => d ? Math.max(0, Math.round((new Date(hoyLima() + 'T12:00:00') - new Date(d + 'T12:00:00')) / 864e5)) : '';
+
+async function vistaIngresos(tab) {
+  tab = tab || 'inventario';
+  $('#app').innerHTML = `<h1>Componentes y proyectos</h1>
+   <div class="muted" style="margin-bottom:8px">Registra los componentes que llegan al laboratorio y los proyectos internos. Al pulsar <b>"Crear en el Maestro"</b> se crea la OT / PI con su número oficial (solo datos técnicos; la parte comercial la completa Gerencia).</div>
+   <div class="row no-print" style="margin-bottom:10px"><div style="flex:0 0 auto;display:flex;gap:6px;flex-wrap:wrap">
+     <a class="btn ${tab === 'inventario' ? 'pri' : ''}" href="#/ingresos/inventario">Inventario del laboratorio</a>
+     <a class="btn ${tab === 'registros' ? 'pri' : ''}" href="#/ingresos/registros">Registros</a></div>
+     <div style="flex:1 1 auto"></div><div style="flex:0 0 auto;display:flex;gap:6px;flex-wrap:wrap">
+     <button class="pri" id="n-serv">+ Componentes (OT de servicio)</button><button id="n-pi">+ Proyecto interno</button></div></div>
+   <div id="ing-res"><div class="loading">Cargando…</div></div>`;
+  $('#n-serv').onclick = () => formIngreso({ clase: 'SERVICIO', modo: 'NUEVA' });
+  $('#n-pi').onclick = () => formIngreso({ clase: 'INTERNO', modo: 'NUEVA', tipo: 'OTRO' });
+  const { data: ings, error } = await sb.from('ingresos').select('*, ingreso_componentes(*)').order('created_at', { ascending: false }).limit(500);
+  if (error) { $('#ing-res').innerHTML = `<div class="card">${esc(error.message)}</div>`; return; }
+  if (tab === 'registros') return pintarRegistros(ings || []);
+  pintarInventario(ings || []);
+}
+
+function pintarRegistros(ings) {
+  $('#ing-res').innerHTML = `<div class="card" style="padding:0;overflow:auto">${ings.length ? `<table><thead><tr><th>Código</th><th>Tipo</th><th>Servicio / proyecto</th><th>Cliente</th><th>Comp.</th><th>Recepción</th><th>Estado</th><th>OT / PI</th></tr></thead><tbody>${ings.map(i => `<tr class="click" data-ing="${i.id}"><td class="mono">${esc(i.codigo)}</td><td>${i.clase === 'INTERNO' ? 'Proyecto interno' : (i.modo === 'AGREGAR' ? 'Agregar a OT' : 'OT de servicio')}</td><td>${esc(i.nombre || '')}</td><td>${esc(i.cliente || '')}</td><td>${(i.ingreso_componentes || []).length}</td><td>${i.fecha_recepcion ? fdate(i.fecha_recepcion) : ''}</td><td><span class="chip ${EST_ING[i.estado][1]}">${EST_ING[i.estado][0]}</span></td><td class="mono">${esc(i.ot_numero || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="muted" style="padding:10px">Aún no hay registros. Usa los botones de arriba.</div>'}</div>`;
+  $('#ing-res').querySelectorAll('[data-ing]').forEach(r => r.onclick = () => detalleIngreso(ings.find(i => i.id === r.dataset.ing)));
+}
+
+function pintarInventario(ings) {
+  const filas = []; ings.filter(i => i.estado !== 'ANULADO').forEach(i => (i.ingreso_componentes || []).forEach(c => filas.push({ i, c })));
+  $('#ing-res').innerHTML = `<div class="card row no-print"><div><label>Buscar</label><input id="iv-q" placeholder="Equipo, N° de serie, cliente, OT"></div>
+     <div style="flex:0 0 200px"><label>Estado</label><select id="iv-e"><option value="act">En laboratorio</option><option value="">Todos</option>${Object.entries(EST_LAB).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select></div></div>
+   <div id="iv-k" class="kpis" style="margin-bottom:10px"></div><div class="card" style="padding:0;overflow:auto" id="iv-t"></div>`;
+  const pintar = () => {
+    const q = $('#iv-q').value.trim().toUpperCase(), e = $('#iv-e').value;
+    const l = filas.filter(({ i, c }) => (e === 'act' ? c.estado_lab !== 'DESPACHADO' : (!e || c.estado_lab === e)) && (!q || [c.descripcion, c.marca, c.modelo, c.numero_serie, c.numero_parte, i.cliente, i.nombre, i.ot_numero, i.codigo].join(' ').toUpperCase().includes(q)));
+    const enLab = filas.filter(f => f.c.estado_lab !== 'DESPACHADO');
+    $('#iv-k').innerHTML = `<div class="kpi"><b>${enLab.length}</b>en laboratorio</div><div class="kpi"><b>${enLab.filter(f => !f.i.ot_numero).length}</b>sin OT (borrador)</div><div class="kpi"><b>${enLab.filter(f => diasDesde(f.i.fecha_recepcion) > 30).length}</b>con más de 30 días</div>`;
+    $('#iv-t').innerHTML = l.length ? `<table><thead><tr><th>OT / código</th><th>Cliente</th><th>Equipo</th><th>N° serie</th><th>Falla reportada</th><th>Ubicación</th><th>Días</th><th>Estado</th></tr></thead><tbody>${l.map(({ i, c }) => `<tr><td class="mono">${i.ot_id ? `<a href="#/ot/${i.ot_id}">${esc(i.ot_numero)}</a>` : esc(i.codigo)}</td><td>${esc(i.cliente || (i.clase === 'INTERNO' ? 'Proyecto interno' : ''))}</td><td>${esc([c.descripcion, c.marca, c.modelo].filter(Boolean).join(' '))}${+c.cantidad !== 1 ? ` <span class="muted">× ${c.cantidad}</span>` : ''}</td><td>${c.numero_serie ? `<a class="mono" href="#/serie/${encodeURIComponent(c.numero_serie)}">${esc(c.numero_serie)}</a>` : ''}</td><td>${esc(c.falla || '')}</td><td><input class="sm-in" data-ub="${c.id}" value="${esc(c.ubicacion || '')}" placeholder="—"></td><td>${diasDesde(i.fecha_recepcion)}</td><td><select class="sm-in" data-est="${c.id}">${Object.entries(EST_LAB).map(([k, v]) => `<option value="${k}" ${k === c.estado_lab ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table>` : '<div class="muted" style="padding:10px">Sin componentes para mostrar. Registra los que llegan con "+ Componentes (OT de servicio)".</div>';
+    $('#iv-t').querySelectorAll('[data-est]').forEach(s => s.onchange = async () => { const { error } = await sb.from('ingreso_componentes').update({ estado_lab: s.value }).eq('id', s.dataset.est); if (error) return toast(error.message); filas.find(f => f.c.id === s.dataset.est).c.estado_lab = s.value; toast('Estado actualizado'); });
+    $('#iv-t').querySelectorAll('[data-ub]').forEach(s => s.onchange = async () => { const { error } = await sb.from('ingreso_componentes').update({ ubicacion: s.value.trim() || null }).eq('id', s.dataset.ub); if (error) return toast(error.message); filas.find(f => f.c.id === s.dataset.ub).c.ubicacion = s.value.trim(); toast('Ubicación guardada'); });
+  };
+  $('#iv-q').oninput = pintar; $('#iv-e').onchange = pintar; pintar();
+}
+
+function detalleIngreso(i) {
+  const comps = i.ingreso_componentes || [];
+  modal(`<h1><span class="mono">${esc(i.codigo)}</span> · ${esc(i.nombre || (i.modo === 'AGREGAR' ? 'Agregar componentes a OT' : ''))}</h1>
+   <p><span class="chip ${EST_ING[i.estado][1]}">${EST_ING[i.estado][0]}</span> ${i.ot_numero ? `<a class="mono" href="#/ot/${i.ot_id}" onclick="cerrarModal()">${esc(i.ot_numero)}</a>` : ''}</p>
+   <div class="muted">${i.clase === 'INTERNO' ? 'Proyecto interno' : 'Cliente: ' + esc(i.cliente || '—')} · ${esc(TIPOS_OT[i.tipo] || i.tipo || '')} · Prioridad ${esc(i.prioridad)}${i.guia ? ' · Guía ' + esc(i.guia) : ''}${i.fecha_recepcion ? ' · Recepción ' + fdate(i.fecha_recepcion) : ''}${i.fecha_entrega ? ' · Entrega estimada ' + fdate(i.fecha_entrega) : ''}</div>
+   ${i.descripcion ? `<p>${esc(i.descripcion)}</p>` : ''}${i.estado === 'ANULADO' && i.error ? `<p class="alerta">Motivo de anulación: ${esc(i.error)}</p>` : ''}
+   <div style="overflow:auto">${comps.length ? `<table><thead><tr><th>Equipo</th><th>N° parte</th><th>N° serie</th><th>Cant.</th><th>Falla</th></tr></thead><tbody>${comps.map(c => `<tr><td>${esc([c.descripcion, c.marca, c.modelo].filter(Boolean).join(' '))}</td><td class="mono">${esc(c.numero_parte || '')}</td><td class="mono">${esc(c.numero_serie || '')}</td><td>${c.cantidad}</td><td>${esc(c.falla || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="muted">Sin componentes.</div>'}</div>
+   <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+    ${i.estado === 'BORRADOR' ? '<button id="d-edit">Editar</button><button class="peligro" id="d-anu">Anular</button><button class="pri" id="d-env">Crear en el Maestro</button>' : ''}
+    ${i.estado === 'ENVIADO' && i.modo === 'NUEVA' ? '<button class="peligro" id="d-anu">Anular OT</button>' : ''}<button id="d-x">Cerrar</button></div>`);
+  $('#d-x').onclick = cerrarModal;
+  if ($('#d-edit')) $('#d-edit').onclick = () => formIngreso(i);
+  if ($('#d-env')) $('#d-env').onclick = () => enviarIngreso(i);
+  if ($('#d-anu')) $('#d-anu').onclick = () => anularIngreso(i);
+}
+
+async function formIngreso(i) {
+  const ots = await cargarOT(); const activas = ots.filter(o => o.estado === 'activo');
+  const pi = i.clase === 'INTERNO';
+  const comps = (i.ingreso_componentes || []).length ? i.ingreso_componentes : [{}];
+  const filaC = c => `<tr><td><input data-k="descripcion" value="${esc(c.descripcion || '')}" placeholder="Ej. Módulo de fase"></td><td><input data-k="marca" value="${esc(c.marca || '')}"></td><td><input data-k="modelo" value="${esc(c.modelo || '')}"></td><td><input data-k="numero_parte" value="${esc(c.numero_parte || '')}"></td><td><input data-k="numero_serie" value="${esc(c.numero_serie || '')}"></td><td style="width:70px"><input data-k="cantidad" type="number" min="1" step="1" value="${c.cantidad || 1}"></td><td><input data-k="falla" value="${esc(c.falla || '')}"></td><td><button class="sm peligro" data-delc>✕</button></td></tr>`;
+  modal(`<h1>${i.id ? 'Editar ' + esc(i.codigo) : (pi ? 'Nuevo proyecto interno' : 'Registrar componentes')}</h1>
+   ${pi ? '' : `<div class="tabs"><button id="m-nueva" class="${i.modo !== 'AGREGAR' ? 'on' : ''}">Nueva OT</button><button id="m-agr" class="${i.modo === 'AGREGAR' ? 'on' : ''}">Agregar a OT existente</button></div>`}
+   <div id="f-agr" class="${i.modo === 'AGREGAR' ? '' : 'hidden'}"><label>OT / PI existente *</label><select id="f-ot"><option value="">— Elige —</option>${activas.map(o => `<option value="${o.id}" ${o.id === i.ot_destino ? 'selected' : ''}>${esc(o.numero)} · ${esc((o.nombre || '').slice(0, 60))}${o.cliente ? ' · ' + esc(o.cliente) : ''}</option>`).join('')}</select></div>
+   <div id="f-nueva" class="${i.modo === 'AGREGAR' ? 'hidden' : ''}">
+     <div class="row">${pi ? '' : `<div><label>Cliente *</label><input id="f-cli" value="${esc(i.cliente || '')}" placeholder="Ej. SHOUGANG HIERRO PERU"></div>`}
+       <div style="flex:2 1 300px"><label>${pi ? 'Nombre del proyecto *' : 'Servicio *'}</label><input id="f-nom" value="${esc(i.nombre || '')}" placeholder="${pi ? 'Ej. Banco de pruebas para módulos ACS2000' : 'Ej. Reparación de 2 módulos ACS2000'}"></div>
+       <div style="flex:0 0 170px"><label>Tipo</label><select id="f-tipo">${Object.entries(TIPOS_OT).map(([k, v]) => `<option value="${k}" ${k === (i.tipo || 'REPARACION') ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
+     <div style="margin-top:8px"><label>${pi ? 'Objetivo / alcance técnico' : 'Descripción técnica / alcance'}</label><textarea id="f-desc">${esc(i.descripcion || '')}</textarea></div>
+     <div class="row" style="margin-top:8px"><div><label>Responsable</label><input id="f-resp" value="${esc(i.responsable || '')}"></div>
+       <div><label>${pi ? 'Fecha de inicio' : 'Fecha de inicio (opcional)'}</label><input type="date" id="f-ini" value="${i.fecha_inicio || ''}"></div>
+       <div><label>Entrega estimada</label><input type="date" id="f-ent" value="${i.fecha_entrega || ''}"></div></div>
+   </div>
+   <div class="row" style="margin-top:8px">${pi ? '' : `<div><label>Guía de entrada</label><input id="f-guia" value="${esc(i.guia || '')}" placeholder="Ej. EG07-00018776"></div>
+     <div><label>Fecha de recepción</label><input type="date" id="f-rec" value="${i.fecha_recepcion || hoyLima()}" max="${hoyLima()}"></div>`}
+     <div style="flex:0 0 150px"><label>Prioridad</label><select id="f-pri">${['BAJA', 'NORMAL', 'ALTA', 'URGENTE'].map(p => `<option ${p === (i.prioridad || 'NORMAL') ? 'selected' : ''}>${p}</option>`).join('')}</select></div></div>
+   <h2>${pi ? 'Componentes / materiales del proyecto (opcional)' : 'Componentes recibidos *'}</h2>
+   <div style="overflow:auto"><table class="tabla-in"><thead><tr><th>Descripción *</th><th>Marca</th><th>Modelo</th><th>N° parte</th><th>N° serie</th><th>Cant.</th><th>Falla reportada</th><th></th></tr></thead><tbody id="f-comps">${comps.map(filaC).join('')}</tbody></table></div>
+   <button class="sm" id="f-addc" style="margin-top:6px">+ Otro componente</button>
+   <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button id="f-x">Cancelar</button><button id="f-bor">Guardar borrador</button><button class="pri" id="f-env">Guardar y crear en el Maestro</button></div>`);
+  let modo = pi ? 'NUEVA' : (i.modo || 'NUEVA');
+  if (!pi) {
+    $('#m-nueva').onclick = () => { modo = 'NUEVA'; $('#m-nueva').classList.add('on'); $('#m-agr').classList.remove('on'); $('#f-nueva').classList.remove('hidden'); $('#f-agr').classList.add('hidden'); };
+    $('#m-agr').onclick = () => { modo = 'AGREGAR'; $('#m-agr').classList.add('on'); $('#m-nueva').classList.remove('on'); $('#f-agr').classList.remove('hidden'); $('#f-nueva').classList.add('hidden'); };
+  }
+  const enlazarDel = () => $('#f-comps').querySelectorAll('[data-delc]').forEach(b => b.onclick = () => { b.closest('tr').remove(); if (!$('#f-comps').children.length) $('#f-comps').insertAdjacentHTML('beforeend', filaC({})), enlazarDel(); });
+  enlazarDel();
+  $('#f-addc').onclick = () => { $('#f-comps').insertAdjacentHTML('beforeend', filaC({})); enlazarDel(); };
+  $('#f-x').onclick = cerrarModal;
+  const val = id => ($(id)?.value ?? '').trim() || null;
+  const guardar = async (enviar) => {
+    const reg = { clase: i.clase, modo, ot_destino: modo === 'AGREGAR' ? val('#f-ot') : null, prioridad: $('#f-pri').value,
+      guia: val('#f-guia'), fecha_recepcion: pi ? null : val('#f-rec') };
+    if (modo === 'NUEVA') Object.assign(reg, { nombre: val('#f-nom'), cliente: pi ? null : val('#f-cli'), tipo: $('#f-tipo').value, descripcion: val('#f-desc'), responsable: val('#f-resp'), fecha_inicio: val('#f-ini'), fecha_entrega: val('#f-ent') });
+    else { const o = ots.find(x => x.id === reg.ot_destino); Object.assign(reg, { nombre: o ? 'Agregar a ' + o.numero : null, cliente: o?.cliente || null }); }
+    const cs = [...$('#f-comps').children].map(tr => { const c = {}; tr.querySelectorAll('[data-k]').forEach(inp => c[inp.dataset.k] = inp.value.trim() || null); c.cantidad = +c.cantidad || 1; return c; }).filter(c => c.descripcion);
+    if (modo === 'AGREGAR' && !reg.ot_destino) return toast('Elige la OT a la que se agregan los componentes');
+    if (modo === 'NUEVA' && !reg.nombre) return toast(pi ? 'Escribe el nombre del proyecto' : 'Escribe el servicio');
+    if (modo === 'NUEVA' && !pi && !reg.cliente) return toast('Escribe el cliente');
+    if (!pi && !cs.length) return toast('Agrega al menos un componente (descripción)');
+    // aviso de N° de serie que ya están en una OT activa
+    const series = cs.map(c => (c.numero_serie || '').toUpperCase()).filter(Boolean);
+    if (enviar && series.length) {
+      const { data: dup } = await sb.from('componentes').select('numero_serie, ot_id').in('numero_serie', series);
+      const act = (dup || []).filter(d => ots.find(o => o.id === d.ot_id && o.estado === 'activo') && d.ot_id !== reg.ot_destino);
+      if (act.length && !confirm('Atención: estos N° de serie ya están en una OT activa:\n' + act.map(d => d.numero_serie + ' → ' + (ots.find(o => o.id === d.ot_id)?.numero || '')).join('\n') + '\n\n¿Crear de todos modos?')) return;
+    }
+    const b1 = $('#f-bor'), b2 = $('#f-env'); b1.disabled = b2.disabled = true;
+    try {
+      let id = i.id;
+      if (id) { const { error } = await sb.from('ingresos').update(reg).eq('id', id); if (error) throw error;
+        const { error: e2 } = await sb.from('ingreso_componentes').delete().eq('ingreso_id', id); if (e2) throw e2; }
+      else { const { data, error } = await sb.from('ingresos').insert(reg).select('id').single(); if (error) throw error; id = data.id; }
+      if (cs.length) { const { error } = await sb.from('ingreso_componentes').insert(cs.map(c => ({ ...c, ingreso_id: id }))); if (error) throw error; }
+      if (!enviar) { cerrarModal(); toast('Borrador guardado'); return vistaIngresos('registros'); }
+      await enviarIngreso({ id, codigo: '' }, true);
+    } catch (e) { toast(e.message, 6000); b1.disabled = b2.disabled = false; }
+  };
+  $('#f-bor').onclick = () => guardar(false);
+  $('#f-env').onclick = () => guardar(true);
+}
+
+async function enviarIngreso(i, sinConfirmar) {
+  if (!sinConfirmar && !confirm('Se creará la OT / PI en el Maestro con su número oficial (o se agregarán los componentes a la OT elegida). ¿Continuar?')) return;
+  modal('<div class="loading">Creando en el Maestro…</div>');
+  const { data, error } = await sb.rpc('enviar_ingreso', { p_id: i.id });
+  if (error) { cerrarModal(); toast('No se pudo crear: ' + error.message, 7000); return vistaIngresos('registros'); }
+  CACHE.ot = null;
+  modal(`<h1>✔ Registrado en el Maestro</h1><p style="font-size:18px">OT / PI: <b class="mono">${esc(data.numero)}</b></p>
+    <p class="muted">Ya puedes registrar avances en esta OT. Gerencia completará la parte comercial (cotización, OC).</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><a class="btn" href="#/ot/${esc(data.ot_id || '')}" onclick="cerrarModal()">Ver OT</a><button class="pri" id="ok-x">Aceptar</button></div>`);
+  $('#ok-x').onclick = () => { cerrarModal(); vistaIngresos('registros'); };
+}
+
+function anularIngreso(i) {
+  modal(`<h1>Anular ${esc(i.ot_numero || i.codigo)}</h1>
+   <p class="muted">${i.estado === 'ENVIADO' ? 'La OT se marcará como cancelada en el Maestro. Solo es posible si aún no tiene trabajos, cotización ni OC.' : 'El borrador quedará anulado.'}</p>
+   <label>Motivo *</label><input id="an-m"><div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button id="an-x">Cancelar</button><button class="peligro" id="an-ok">Anular</button></div>`);
+  $('#an-x').onclick = cerrarModal;
+  $('#an-ok').onclick = async () => {
+    const m = $('#an-m').value.trim(); if (!m) return toast('Escribe el motivo');
+    const { error } = await sb.rpc('anular_ingreso', { p_id: i.id, p_motivo: m });
+    if (error) return toast(error.message, 6000);
+    CACHE.ot = null; cerrarModal(); toast('Anulado'); vistaIngresos('registros');
+  };
+}
+
 // ---------- reporte ----------
 async function vistaReporte(fecha) {
   fecha = fecha || hoyLima();
@@ -385,10 +581,11 @@ async function vistaReporte(fecha) {
   const tec = r.tecnicos || [];
   $('#r-body').innerHTML = `<div class="rep-h"><img src="logo-gto.png"><div style="text-align:right"><b>REPORTE DIARIO DE ACTIVIDADES</b><br>Laboratorio y Taller · ${fdate(fecha)}</div></div>
    <h1 class="no-print">Reporte diario · ${fdate(fecha)}</h1>
+   ${htmlAlertas(r.alertas)}
    ${!r.laborable ? `<p><span class="chip amb">${r.feriado ? 'Feriado: ' + esc(r.feriado) : 'Fin de semana'}${r.total_registros ? ' · día extra' : ''}</span></p>` : ''}
    <div class="kpis"><div class="kpi"><b>${r.total_registros}</b>registros</div><div class="kpi"><b>${(+r.total_horas).toFixed(1)}</b>horas</div><div class="kpi"><b>${tec.filter(t => t.registros > 0).length} / ${tec.length}</b>técnicos con registro</div></div>
    ${tec.map(t => `<h2>${esc(titleCase(t.nombre))} <span class="muted">· ${esc(t.cargo || '')} · ${t.registros} registro(s) · ${(+t.horas).toFixed(1)} h</span></h2>
-     ${t.items.length ? `<div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>OT / PI</th><th>Equipo / serie</th><th>Tipo</th><th>Trabajo realizado</th><th>Hallazgos</th><th>Repuestos</th><th>Horas</th><th>Estado</th></tr></thead><tbody>${t.items.map(i => `<tr><td class="mono">${esc(i.ot)}<div class="muted">${esc((i.cliente || '').slice(0, 30))}</div></td><td>${esc(i.equipo || '')}${i.serie ? `<div class="mono muted">${esc(i.serie)}</div>` : ''}</td><td>${TIPOS[i.tipo] || i.tipo}</td><td>${esc(i.actividad)}</td><td>${esc(i.hallazgos || '')}</td><td>${esc(i.repuestos || '')}</td><td>${i.horas ?? ''}</td><td>${ESTADOS[i.estado]?.[0] || i.estado}</td></tr>`).join('')}</tbody></table></div>` : '<div class="card muted">Sin registros en el día.</div>'}`).join('')}`;
+     ${t.items.length ? `<div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>OT / PI</th><th>Equipo / serie</th><th>Tipo</th><th>Trabajo realizado</th><th>Hallazgos</th><th>Repuestos</th><th>Horas</th><th>Estado</th></tr></thead><tbody>${t.items.map(i => `<tr><td class="mono">${esc(i.ot)}<div class="muted">${esc((i.cliente || '').slice(0, 30))}</div></td><td>${esc(i.equipo || '')}${i.serie ? `<div class="mono muted">${esc(i.serie)}</div>` : ''}</td><td>${TIPOS[i.tipo] || i.tipo}</td><td>${esc(i.actividad)}${i.dias_repetidos >= 3 ? `<div class="alerta">⚠ Día ${i.dias_repetidos} seguido · ${esc(MOTIVOS[i.motivo] || '')}${i.motivo_detalle ? ': ' + esc(i.motivo_detalle) : ''}</div>` : ''}</td><td>${esc(i.hallazgos || '')}</td><td>${esc(i.repuestos || '')}</td><td>${i.horas ?? ''}</td><td>${ESTADOS[i.estado]?.[0] || i.estado}</td></tr>`).join('')}</tbody></table></div>` : '<div class="card muted">Sin registros en el día.</div>'}`).join('')}`;
   $('#r-pdf').onclick = () => window.print();
   $('#r-xls').onclick = () => {
     const rows = []; tec.forEach(t => t.items.forEach(i => rows.push({ Fecha: fecha, Tecnico: t.nombre, Cargo: t.cargo, OT: i.ot, Servicio: i.ot_nombre, Cliente: i.cliente, Equipo: i.equipo, Serie: i.serie, Tipo: TIPOS[i.tipo] || i.tipo, Trabajo: i.actividad, Hallazgos: i.hallazgos, Repuestos: i.repuestos, Horas: i.horas, Estado: ESTADOS[i.estado]?.[0] || i.estado })));
