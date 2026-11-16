@@ -19,6 +19,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const hoyLima = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
 const fdate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 const fdt = d => d ? new Date(d).toLocaleString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const esGer = () => YO && ['gerencia', 'admin'].includes(YO.rol);
 const esSup = () => YO && ['supervisor', 'gerencia', 'admin'].includes(YO.rol);
 function toast(m, ms = 3000) { const t = $('#toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), ms); }
 function modal(html) { $('#modal-body').innerHTML = html; $('#modal').classList.remove('hidden'); }
@@ -79,6 +80,7 @@ async function pantallaIngreso(msg) {
   </div>`;
   const tab = t => { $('#t-trab').classList.toggle('on', t === 'trab'); $('#t-ger').classList.toggle('on', t === 'ger'); $('#f-trab').classList.toggle('hidden', t !== 'trab'); $('#f-ger').classList.toggle('hidden', t !== 'ger'); };
   $('#t-trab').onclick = () => tab('trab'); $('#t-ger').onclick = () => tab('ger');
+  if (location.hash.startsWith('#/aprobar')) tab('ger');
   let modo = null;
   $('#l-ok').onclick = async () => {
     const nombre = $('#l-nom').value, dni = $('#l-dni').value.trim();
@@ -137,11 +139,19 @@ async function iniciar() {
   if (!p || !p.activo) { await sb.auth.signOut(); return pantallaIngreso('Tu usuario no está activo. Consulta con el supervisor.'); }
   YO = p; CACHE = { ot: null, perfiles: null };
   const links = [['#/', 'Mi día'], ['#/ot', 'OT / PI'], ['#/serie', 'Historial por serie'], ['#/reporte', 'Reporte']];
-  if (esSup()) links.push(['#/ingresos', 'Componentes y proyectos'], ['#/informes', 'Informes técnicos'], ['#/revision', 'Revisión'], ['#/personal', 'Personal']);
+  if (esSup()) links.push(['#/ingresos', 'Componentes y proyectos'], ['#/borradores', 'Borradores de informes'], ['#/informes', 'Informes técnicos'], ['#/revision', 'Revisión'], ['#/personal', 'Personal']);
   $('#nav').innerHTML = links.map(([h, t]) => `<a href="${h}">${t}</a>`).join('');
   $('#who').innerHTML = `<span>${esc(titleCase(nombreCorto(p.nombre)))} · ${esc(p.rol)}</span><button class="sm" id="salir">Salir</button>`;
   $('#salir').onclick = async () => { await sb.auth.signOut(); YO = null; location.hash = '#/'; pantallaIngreso(); };
   router();
+  avisoPendientes();
+}
+// aviso a Gerencia: informes esperando aprobación
+async function avisoPendientes() {
+  if (!esGer()) return;
+  const { count } = await sb.from('informes_borrador').select('id', { count: 'exact', head: true }).eq('estado', 'LISTO');
+  const a = document.querySelector('#nav a[href="#/borradores"]'); if (a && count) a.innerHTML = `Borradores de informes <span class="chip rojo">${count}</span>`;
+  if (count && !location.hash.startsWith('#/aprobar') && !location.hash.startsWith('#/borradores')) toast(`Tiene ${count} informe(s) técnico(s) pendiente(s) de aprobación`, 6000);
 }
 window.addEventListener('hashchange', () => { if (YO) router(); else if (location.hash.startsWith('#/clave')) iniciar(); });
 sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') { location.hash = '#/clave'; pantallaClave(); } });
@@ -156,6 +166,8 @@ function router() {
   if (ruta === 'serie') return vistaSerie(decodeURIComponent(id || ''));
   if (ruta === 'reporte') return vistaReporte(id);
   if (ruta === 'informes' && esSup()) return vistaInformes();
+  if (ruta === 'borradores' && esSup()) return vistaBorradores();
+  if (ruta === 'aprobar' && esSup()) return vistaAprobar(id);
   if (ruta === 'ingresos' && esSup()) return vistaIngresos(id);
   if (ruta === 'revision' && esSup()) return vistaRevision();
   if (ruta === 'personal' && esSup()) return vistaPersonal();
@@ -403,14 +415,105 @@ async function vistaInformes() {
   $('#i-q').oninput = pintar; $('#i-a').onchange = pintar; $('#i-t').onchange = pintar; pintar();
 }
 
+// ---------- borradores de informes técnicos (supervisor sube → revisión automática → Gerencia aprueba) ----------
+const EST_INF = { PENDIENTE: ['En cola de revisión', 'gris'], EN_PROCESO: ['En revisión', 'amb'], LISTO: ['Por aprobar', 'amb'], APROBADO: ['Aprobado', ''], DEVUELTO: ['Devuelto', 'rojo'], ANULADO: ['Anulado', 'gris'] };
+const BINF = 'bitacora-informes';
+async function urlInf(path, descarga) {
+  if (!path) return null;
+  const { data } = await sb.storage.from(BINF).createSignedUrl(path, 600, descarga ? { download: descarga } : undefined);
+  return data?.signedUrl || null;
+}
+async function vistaBorradores() {
+  const ots = await cargarOT(); const otMap = Object.fromEntries(ots.map(o => [o.id, o])); const per = await cargarPerfiles();
+  const { data: bs, error } = await sb.from('informes_borrador').select('*').order('created_at', { ascending: false }).limit(300);
+  if (error) { $('#app').innerHTML = `<div class="card">${esc(error.message)}</div>`; return; }
+  const por = (bs || []).filter(b => b.estado === 'LISTO');
+  $('#app').innerHTML = `<h1>Borradores de informes técnicos</h1>
+   <div class="muted" style="margin-bottom:8px">El supervisor sube el borrador en Word. Se revisa y formatea automáticamente (formato GTO, datos del Maestro, observaciones de lo que falte) y llega a Gerencia en PDF y Word para aprobar. Al aprobar se registra en la OT del sistema de gestión.</div>
+   ${YO.rol === 'supervisor' || esGer() ? '<div class="no-print" style="margin-bottom:10px"><button class="pri" id="b-nuevo">+ Subir borrador de informe</button></div>' : ''}
+   ${por.length ? `<div class="card alerta-box"><b style="color:#C0392B">${por.length} informe(s) pendiente(s) de aprobación</b>${esGer() ? ' — pulse uno para revisarlo.' : ''}</div>` : ''}
+   <div class="card" style="padding:0;overflow:auto">${(bs || []).length ? `<table><thead><tr><th>Subido</th><th>OT</th><th>Tipo</th><th>N° informe</th><th>Versión</th><th>Estado</th><th>Resultado</th></tr></thead><tbody>${bs.map(b => `<tr class="click" onclick="location.hash='#/aprobar/${b.id}'"><td style="white-space:nowrap">${fdt(b.created_at)}<div class="muted">${esc(titleCase(per[b.subido_por]?.nombre || ''))}</div></td><td class="mono">${esc(otMap[b.ot_id]?.numero || '')}<div class="muted">${esc((otMap[b.ot_id]?.cliente || '').slice(0, 30))}</div></td><td>${b.tipo === 'INICIAL' ? 'Inicial' : 'Final'}</td><td class="mono">${esc(b.numero || '—')}</td><td>${b.version}</td><td><span class="chip ${EST_INF[b.estado][1]}">${EST_INF[b.estado][0]}</span></td><td>${b.resultado === 'COMPLETO' ? '<span class="chip">✔ Completo</span>' : b.resultado ? `<span class="chip rojo">⚠ ${(b.observaciones || []).length} observación(es)</span>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="muted" style="padding:10px">Aún no hay borradores.</div>'}</div>`;
+  if ($('#b-nuevo')) $('#b-nuevo').onclick = () => formBorrador({});
+}
+
+async function formBorrador(prev) {
+  const ots = await cargarOT(); const activas = ots.filter(o => o.estado === 'activo');
+  const corr = !!prev.raiz_id;
+  modal(`<h1>${corr ? 'Subir corrección' : 'Subir borrador de informe técnico'}</h1>
+   ${corr ? `<p class="alerta">Corrección del informe <b class="mono">${esc(prev.numero || '')}</b> devuelto por Gerencia: "${esc(prev.decision_comentario || '')}". Se mantiene el mismo número.</p>` : ''}
+   <div class="row"><div style="flex:2 1 300px"><label>OT / PI *</label><select id="bf-ot" ${corr ? 'disabled' : ''}><option value="">— Elige —</option>${(corr ? ots : activas).map(o => `<option value="${o.id}" ${o.id === prev.ot_id ? 'selected' : ''}>${esc(o.numero)} · ${esc((o.nombre || '').slice(0, 60))}${o.cliente ? ' · ' + esc(o.cliente) : ''}</option>`).join('')}</select></div>
+   <div style="flex:0 0 180px"><label>Tipo de informe *</label><select id="bf-tipo" ${corr ? 'disabled' : ''}><option value="INICIAL" ${prev.tipo === 'INICIAL' ? 'selected' : ''}>Inicial (ITI)</option><option value="FINAL" ${prev.tipo === 'FINAL' ? 'selected' : ''}>Final (ITF)</option></select></div></div>
+   <div style="margin-top:8px"><label>Borrador en Word (.docx) *</label><input type="file" id="bf-arch" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></div>
+   <div style="margin-top:8px"><label>Comentario para la revisión (opcional)</label><textarea id="bf-com" placeholder="Ej. es un informe por cada módulo; falta foto de placa del MOD4; la atención es el Ing. ..."></textarea></div>
+   <p class="muted">Se revisa en el siguiente turno de revisión (10:00, 13:00 o 17:00 de lunes a viernes). El número de informe lo asigna el sistema.</p>
+   <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button id="bf-x">Cancelar</button><button class="pri" id="bf-ok">Subir borrador</button></div>`);
+  $('#bf-x').onclick = cerrarModal;
+  $('#bf-ok').onclick = async () => {
+    const ot = corr ? prev.ot_id : $('#bf-ot').value, tipo = corr ? prev.tipo : $('#bf-tipo').value, f = $('#bf-arch').files[0];
+    if (!ot) return toast('Elige la OT'); if (!f) return toast('Adjunta el borrador en Word');
+    if (!/\.docx$/i.test(f.name)) return toast('El borrador debe ser un archivo Word .docx');
+    if (f.size > 50 * 1024 * 1024) return toast('El archivo supera 50 MB');
+    const btn = $('#bf-ok'); btn.disabled = true; btn.textContent = 'Subiendo…';
+    try {
+      const path = `borradores/${crypto.randomUUID()}.docx`;
+      const up = await sb.storage.from(BINF).upload(path, f, { contentType: f.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }); if (up.error) throw up.error;
+      const reg = { ot_id: ot, tipo, archivo_path: path, archivo_nombre: f.name, comentario: $('#bf-com').value.trim() || null };
+      if (corr) reg.raiz_id = prev.raiz_id;
+      const { error } = await sb.from('informes_borrador').insert(reg); if (error) throw error;
+      cerrarModal(); toast('Borrador subido. Se revisará en el próximo turno.', 5000); vistaBorradores();
+    } catch (e) { toast(e.message, 6000); btn.disabled = false; btn.textContent = 'Subir borrador'; }
+  };
+}
+
+async function vistaAprobar(id) {
+  const ots = await cargarOT(); const otMap = Object.fromEntries(ots.map(o => [o.id, o])); const per = await cargarPerfiles();
+  const { data: b } = await sb.from('informes_borrador').select('*').eq('id', id).maybeSingle();
+  if (!b) { $('#app').innerHTML = '<div class="card">Informe no encontrado.</div>'; return; }
+  const o = otMap[b.ot_id] || {};
+  const [pdf, docx, orig] = await Promise.all([urlInf(b.pdf_path), urlInf(b.docx_path, (b.docx_path || '').split('/').pop()), urlInf(b.archivo_path, b.archivo_nombre)]);
+  const { data: hist } = await sb.from('informes_borrador').select('id,version,estado,decision_comentario,decision_at,created_at').eq('raiz_id', b.raiz_id).order('version');
+  const obs = b.observaciones || [];
+  $('#app').innerHTML = `<p class="no-print"><a href="#/borradores">← Borradores de informes</a></p>
+   <h1>${esc(b.titulo || ('Informe técnico ' + (b.tipo === 'INICIAL' ? 'inicial' : 'final')))} ${b.numero ? `<span class="mono muted">${esc(b.numero)}</span>` : ''}</h1>
+   <div class="muted">${esc(o.numero || '')} · ${esc(o.cliente || '')} · ${esc(o.nombre || '')}</div>
+   <p><span class="chip ${EST_INF[b.estado][1]}">${EST_INF[b.estado][0]}</span> ${b.resultado === 'COMPLETO' ? '<span class="chip">✔ Completo</span>' : b.resultado ? '<span class="chip rojo">⚠ Con observaciones</span>' : ''} <span class="muted">· Versión ${b.version} · subido por ${esc(titleCase(per[b.subido_por]?.nombre || ''))} el ${fdt(b.created_at)}</span></p>
+   ${b.comentario ? `<p><span class="k">COMENTARIO DEL SUPERVISOR:</span> ${esc(b.comentario)}</p>` : ''}
+   ${['PENDIENTE', 'EN_PROCESO'].includes(b.estado) ? '<div class="card muted">El borrador está en cola de revisión. Se procesa en el próximo turno (10:00, 13:00 o 17:00, lunes a viernes).</div>' : ''}
+   ${b.resumen ? `<div class="card">${esc(b.resumen)}</div>` : ''}
+   ${obs.length ? `<div class="card alerta-box"><b style="color:#C0392B">Falta completar / revisar</b><ul style="margin:6px 0">${obs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+   <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+     ${pdf ? `<a class="btn pri" href="${pdf}" target="_blank">Ver PDF</a>` : ''}${docx ? `<a class="btn" href="${docx}">Descargar Word</a>` : ''}${orig ? `<a class="btn" href="${orig}">Borrador original</a>` : ''}</div>
+   ${b.estado === 'LISTO' && esGer() ? `<div class="card"><h2 style="margin-top:0">Decisión de Gerencia</h2><label>Comentario (obligatorio si devuelve)</label><textarea id="ap-com" placeholder="Ej. completar atención del cliente y foto de placa"></textarea>
+       <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end"><button class="peligro" id="ap-dev">Devolver al supervisor</button><button class="pri" id="ap-ok">Aprobar informe</button></div></div>` : ''}
+   ${b.estado === 'LISTO' && !esGer() ? '<div class="card muted">Pendiente de aprobación por Gerencia.</div>' : ''}
+   ${b.estado === 'APROBADO' ? `<div class="card">✔ Aprobado por ${esc(titleCase(per[b.decision_por]?.nombre || ''))} el ${fdt(b.decision_at)}${b.decision_comentario ? ' — ' + esc(b.decision_comentario) : ''}. ${b.maestro_ok ? 'Registrado en la OT del sistema de gestión.' : (b.maestro_error ? '<span class="alerta">Pendiente de registrar en el sistema de gestión: ' + esc(b.maestro_error) + '</span>' : 'Se registrará en la OT del sistema de gestión en los próximos minutos.')}</div>` : ''}
+   ${b.estado === 'DEVUELTO' ? `<div class="card alerta-box"><b>Devuelto por ${esc(titleCase(per[b.decision_por]?.nombre || ''))}</b> el ${fdt(b.decision_at)}: ${esc(b.decision_comentario || '')}
+       ${!(hist || []).some(h => h.version > b.version) ? '<div style="margin-top:8px"><button class="pri" id="ap-corr">Subir corrección</button></div>' : ''}</div>` : ''}
+   ${b.estado === 'PENDIENTE' ? '<div class="no-print"><button class="peligro sm" id="ap-anu">Anular borrador</button></div>' : ''}
+   ${(hist || []).length > 1 ? `<h2>Versiones</h2><div class="card" style="padding:0"><table><tbody>${hist.map(h => `<tr class="click" onclick="location.hash='#/aprobar/${h.id}'"><td>Versión ${h.version}</td><td>${fdt(h.created_at)}</td><td><span class="chip ${EST_INF[h.estado][1]}">${EST_INF[h.estado][0]}</span></td><td>${esc(h.decision_comentario || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+  const decidir = async (apr) => {
+    const c = ($('#ap-com').value || '').trim();
+    if (!apr && c.length < 5) return toast('Escriba qué debe corregir el supervisor');
+    if (apr && !confirm('¿Aprobar el informe? Se registrará en la OT del sistema de gestión.')) return;
+    const { error } = await sb.rpc('decidir_informe', { p_id: b.id, p_aprobar: apr, p_comentario: c || null });
+    if (error) return toast(error.message, 6000);
+    toast(apr ? 'Informe aprobado' : 'Informe devuelto al supervisor'); vistaAprobar(b.id); avisoPendientes();
+  };
+  if ($('#ap-ok')) $('#ap-ok').onclick = () => decidir(true);
+  if ($('#ap-dev')) $('#ap-dev').onclick = () => decidir(false);
+  if ($('#ap-corr')) $('#ap-corr').onclick = () => formBorrador(b);
+  if ($('#ap-anu')) $('#ap-anu').onclick = async () => { if (!confirm('¿Anular este borrador?')) return; const { error } = await sb.rpc('anular_borrador', { p_id: b.id }); if (error) return toast(error.message); vistaAprobar(b.id); };
+}
+
 // ---------- alertas del reporte ----------
 function htmlAlertas(al) {
   if (!al) return '';
-  const rep = al.repetidas || [], sa = al.sin_avance || [], sr = al.sin_registro || [], sv = al.sin_revisar || { total: 0, dias: [] };
-  if (!rep.length && !sa.length && !sr.length && !sv.total) return '<div class="card alerta-ok">✔ Sin alertas en el día.</div>';
+  const rep = al.repetidas || [], sa = al.sin_avance || [], sr = al.sin_registro || [], sv = al.sin_revisar || { total: 0, dias: [] }, ia = al.informes_por_aprobar || [];
+  if (!rep.length && !sa.length && !sr.length && !sv.total && !ia.length) return '<div class="card alerta-ok">✔ Sin alertas en el día.</div>';
   let h = '<div class="card alerta-box"><b style="color:#C0392B">⚠ ALERTAS DEL DÍA</b>';
   if (rep.length) h += `<h3>Actividades repetidas (3 días o más seguidos)</h3><table><thead><tr><th>Técnico</th><th>OT</th><th>Equipo / serie</th><th>Actividad</th><th>Días</th><th>Motivo</th><th>Comentario supervisor</th></tr></thead><tbody>${rep.map(x => `<tr><td>${esc(titleCase(x.tecnico))}</td><td class="mono">${esc(x.ot)}</td><td>${esc(x.equipo || '')}${x.serie ? '<br><span class="muted">S/N ' + esc(x.serie) + '</span>' : ''}</td><td>${esc(TIPOS[x.tipo] || x.tipo)}: ${esc((x.actividad || '').slice(0, 120))}</td><td><b>${x.dias}</b></td><td>${esc(MOTIVOS[x.motivo] || '—')}${x.detalle ? '<br><span class="muted">' + esc(x.detalle) + '</span>' : ''}</td><td>${esc(x.comentario || 'Pendiente de revisión')}</td></tr>`).join('')}</tbody></table>`;
   if (sa.length) h += `<h3>OT / PI en curso sin avance (3 días o más)</h3><table><thead><tr><th>OT</th><th>Servicio</th><th>Cliente</th><th>Último registro</th><th>Días sin avance</th><th>Último estado</th></tr></thead><tbody>${sa.map(x => `<tr><td class="mono">${esc(x.ot)}</td><td>${esc(x.nombre || '')}</td><td>${esc(x.cliente || '')}</td><td>${fdate(x.ultimo)}</td><td><b>${x.dias}</b></td><td>${esc(ESTADOS[x.estado]?.[0] || x.estado || '')}</td></tr>`).join('')}</tbody></table>`;
+  if (ia.length) h += `<h3>Informes técnicos pendientes de aprobación de Gerencia</h3><p>${ia.map(x => `<b class="mono">${esc(x.numero || '')}</b> (${esc(x.ot)}, ${x.dias} día(s))`).join(' · ')}</p>`;
   if (sv.total) h += `<h3>Registros sin revisar por el supervisor (últimos 7 días)</h3><p><b>${sv.total}</b> registro(s) pendiente(s): ${(sv.dias || []).map(x => `${fdate(x.fecha)} — ${x.pendientes} de ${x.total}`).join(' · ')}</p>`;
   if (sr.length) h += `<h3>Técnicos sin registro en el día</h3><p>${sr.map(n => { const m = String(n).match(/^(.*?)( \(.*\))?$/); return esc(titleCase(m[1])) + esc(m[2] || ''); }).join(' · ')}</p>`;
   return h + '</div>';
