@@ -406,11 +406,12 @@ async function vistaInformes() {
 // ---------- alertas del reporte ----------
 function htmlAlertas(al) {
   if (!al) return '';
-  const rep = al.repetidas || [], sa = al.sin_avance || [], sr = al.sin_registro || [];
-  if (!rep.length && !sa.length && !sr.length) return '<div class="card alerta-ok">✔ Sin alertas en el día.</div>';
+  const rep = al.repetidas || [], sa = al.sin_avance || [], sr = al.sin_registro || [], sv = al.sin_revisar || { total: 0, dias: [] };
+  if (!rep.length && !sa.length && !sr.length && !sv.total) return '<div class="card alerta-ok">✔ Sin alertas en el día.</div>';
   let h = '<div class="card alerta-box"><b style="color:#C0392B">⚠ ALERTAS DEL DÍA</b>';
   if (rep.length) h += `<h3>Actividades repetidas (3 días o más seguidos)</h3><table><thead><tr><th>Técnico</th><th>OT</th><th>Equipo / serie</th><th>Actividad</th><th>Días</th><th>Motivo</th><th>Comentario supervisor</th></tr></thead><tbody>${rep.map(x => `<tr><td>${esc(titleCase(x.tecnico))}</td><td class="mono">${esc(x.ot)}</td><td>${esc(x.equipo || '')}${x.serie ? '<br><span class="muted">S/N ' + esc(x.serie) + '</span>' : ''}</td><td>${esc(TIPOS[x.tipo] || x.tipo)}: ${esc((x.actividad || '').slice(0, 120))}</td><td><b>${x.dias}</b></td><td>${esc(MOTIVOS[x.motivo] || '—')}${x.detalle ? '<br><span class="muted">' + esc(x.detalle) + '</span>' : ''}</td><td>${esc(x.comentario || 'Pendiente de revisión')}</td></tr>`).join('')}</tbody></table>`;
   if (sa.length) h += `<h3>OT / PI en curso sin avance (3 días o más)</h3><table><thead><tr><th>OT</th><th>Servicio</th><th>Cliente</th><th>Último registro</th><th>Días sin avance</th><th>Último estado</th></tr></thead><tbody>${sa.map(x => `<tr><td class="mono">${esc(x.ot)}</td><td>${esc(x.nombre || '')}</td><td>${esc(x.cliente || '')}</td><td>${fdate(x.ultimo)}</td><td><b>${x.dias}</b></td><td>${esc(ESTADOS[x.estado]?.[0] || x.estado || '')}</td></tr>`).join('')}</tbody></table>`;
+  if (sv.total) h += `<h3>Registros sin revisar por el supervisor (últimos 7 días)</h3><p><b>${sv.total}</b> registro(s) pendiente(s): ${(sv.dias || []).map(x => `${fdate(x.fecha)} — ${x.pendientes} de ${x.total}`).join(' · ')}</p>`;
   if (sr.length) h += `<h3>Técnicos sin registro en el día</h3><p>${sr.map(n => { const m = String(n).match(/^(.*?)( \(.*\))?$/); return esc(titleCase(m[1])) + esc(m[2] || ''); }).join(' · ')}</p>`;
   return h + '</div>';
 }
@@ -583,7 +584,7 @@ async function vistaReporte(fecha) {
    <h1 class="no-print">Reporte diario · ${fdate(fecha)}</h1>
    ${htmlAlertas(r.alertas)}
    ${!r.laborable ? `<p><span class="chip amb">${r.feriado ? 'Feriado: ' + esc(r.feriado) : 'Fin de semana'}${r.total_registros ? ' · día extra' : ''}</span></p>` : ''}
-   <div class="kpis"><div class="kpi"><b>${r.total_registros}</b>registros</div><div class="kpi"><b>${(+r.total_horas).toFixed(1)}</b>horas</div><div class="kpi"><b>${tec.filter(t => t.registros > 0).length} / ${tec.length}</b>técnicos con registro</div></div>
+   <div class="kpis"><div class="kpi"><b>${r.total_registros}</b>registros</div><div class="kpi"><b>${(+r.total_horas).toFixed(1)}</b>horas</div><div class="kpi"><b>${r.revisados ?? 0} / ${r.total_registros}</b>revisados por el supervisor</div><div class="kpi"><b>${tec.filter(t => t.registros > 0).length} / ${tec.length}</b>técnicos con registro</div></div>
    ${tec.map(t => `<h2>${esc(titleCase(t.nombre))} <span class="muted">· ${esc(t.cargo || '')} · ${t.registros} registro(s) · ${(+t.horas).toFixed(1)} h</span></h2>
      ${t.items.length ? `<div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>OT / PI</th><th>Equipo / serie</th><th>Tipo</th><th>Trabajo realizado</th><th>Hallazgos</th><th>Repuestos</th><th>Horas</th><th>Estado</th></tr></thead><tbody>${t.items.map(i => `<tr><td class="mono">${esc(i.ot)}<div class="muted">${esc((i.cliente || '').slice(0, 30))}</div></td><td>${esc(i.equipo || '')}${i.serie ? `<div class="mono muted">${esc(i.serie)}</div>` : ''}</td><td>${TIPOS[i.tipo] || i.tipo}</td><td>${esc(i.actividad)}${i.dias_repetidos >= 3 ? `<div class="alerta">⚠ Día ${i.dias_repetidos} seguido · ${esc(MOTIVOS[i.motivo] || '')}${i.motivo_detalle ? ': ' + esc(i.motivo_detalle) : ''}</div>` : ''}</td><td>${esc(i.hallazgos || '')}</td><td>${esc(i.repuestos || '')}</td><td>${i.horas ?? ''}</td><td>${ESTADOS[i.estado]?.[0] || i.estado}</td></tr>`).join('')}</tbody></table></div>` : '<div class="card muted">Sin registros en el día.</div>'}`).join('')}`;
   $('#r-pdf').onclick = () => window.print();
