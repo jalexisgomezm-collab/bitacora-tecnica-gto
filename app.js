@@ -60,9 +60,13 @@ async function pantallaIngreso(msg) {
   document.body.classList.add('en-login');
   const GTO_MENU = 'https://sistema-integrado-gto.vercel.app';
   $('#app').innerHTML = `<div class="gto"><div class="gto-login" style="min-height:100vh">
-    <div class="panel" role="img" aria-label="GTO · Minería, industria y ferrovías" style="background-image:url(${GTO_MENU}/assets/panel-sectores.jpg)"></div>
+    <aside class="gto-sector-panel" aria-label="GTO Perú · Minería, industria y ferrovías">
+  <div class="gto-logo-placa"><img src="https://sistema-integrado-gto.vercel.app/assets/logo-gto.png" alt="GTO Electrónica y Eléctrico de Potencia"></div>
+  <h1 class="gto-sector-title">SISTEMA INTEGRADO<br>GTO <span>PERÚ</span></h1>
+  <div class="gto-sectores"><div class="gto-sector gto-sector--mina"><span>MINERÍA</span></div><div class="gto-sector gto-sector--industria"><span>INDUSTRIA</span></div><div class="gto-sector gto-sector--ferrea"><span>FERROVÍAS</span></div></div>
+</aside>
     <div class="form"><div class="caja">
-      <div class="marca"><img src="${GTO_MENU}/assets/icono-taller.png" alt=""><div><small>Sistema Integrado GTO</small><b>Bitácora Técnica</b></div></div>
+      <div class="marca"><img src="${GTO_MENU}/assets/icono-taller.png" alt=""><div><small>Sistema Integrado GTO</small><h2>Bitácora Técnica</h2></div></div>
       <div class="gto-segmento" role="tablist"><button id="t-trab" class="on" type="button">Trabajador</button><button id="t-ger" type="button">Gerencia</button></div>
       ${msg ? `<div class="gto-aviso gto-aviso--info" role="status"><span class="i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v5h1"/></svg></span><div><p>${esc(msg)}</p></div></div>` : ''}
       <div id="f-trab" style="display:grid;gap:14px">
@@ -822,3 +826,4 @@ async function vistaPersonal() {
 }
 
 iniciar();
+
