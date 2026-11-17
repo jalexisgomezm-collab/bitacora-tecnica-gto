@@ -57,27 +57,30 @@ const titleCase = s => String(s || '').toLowerCase().replace(/(^|\s)\S/g, x => x
 async function pantallaIngreso(msg) {
   $('#nav').innerHTML = ''; $('#who').innerHTML = '';
   const { data: lista } = await sb.rpc('lista_ingreso');
-  $('#app').innerHTML = `
-  <div class="login card">
-    <div style="text-align:center"><img src="logo-gto.png" alt="GTO"><h1>Bitácora Técnica</h1><div class="muted">Laboratorio y Taller · GTO PERÚ</div></div>
-    <div class="tabs"><button id="t-trab" class="on">Trabajador</button><button id="t-ger">Gerencia</button></div>
-    ${msg ? `<p class="chip amb" style="display:block;padding:8px">${esc(msg)}</p>` : ''}
-    <div id="f-trab">
-      <label>Tu nombre</label>
-      <select id="l-nom"><option value="">— Elige tu nombre —</option>${(lista || []).map(p => `<option>${esc(p.nombre)}</option>`).join('')}</select>
-      <div style="height:10px"></div><label>Tu DNI</label><input id="l-dni" inputmode="numeric" maxlength="8" placeholder="8 dígitos">
-      <div id="l-pinbox" class="hidden"><div style="height:10px"></div><label id="l-pinlbl">PIN (6 números)</label><input id="l-pin" class="pin" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password">
-        <div id="l-pin2box" class="hidden"><div style="height:8px"></div><label>Repite tu nuevo PIN</label><input id="l-pin2" class="pin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"></div></div>
-      <div style="height:14px"></div><button class="pri" id="l-ok" style="width:100%;justify-content:center">Continuar</button>
-      <p class="muted" style="margin-top:10px">La primera vez crearás un PIN de 6 números que solo tú conocerás. Si lo olvidas, pide al supervisor que lo restablezca.</p>
-    </div>
-    <div id="f-ger" class="hidden">
-      <label>Correo</label><input id="g-mail" type="email" autocomplete="username">
-      <div style="height:10px"></div><label>Contraseña</label><input id="g-pass" type="password" autocomplete="current-password">
-      <div style="height:14px"></div><button class="pri" id="g-ok" style="width:100%;justify-content:center">Ingresar</button>
-      <p><a href="#" id="g-olv" class="muted">Olvidé mi contraseña</a></p>
-    </div>
-  </div>`;
+  document.body.classList.add('en-login');
+  const GTO_MENU = 'https://sistema-integrado-gto.vercel.app';
+  $('#app').innerHTML = `<div class="gto"><div class="gto-login" style="min-height:100vh">
+    <div class="panel" role="img" aria-label="GTO · Minería, industria y ferrovías" style="background-image:url(${GTO_MENU}/assets/panel-sectores.jpg)"></div>
+    <div class="form"><div class="caja">
+      <div class="marca"><img src="${GTO_MENU}/assets/icono-taller.png" alt=""><div><small>Sistema Integrado GTO</small><b>Bitácora Técnica</b></div></div>
+      <div class="gto-segmento" role="tablist"><button id="t-trab" class="on" type="button">Trabajador</button><button id="t-ger" type="button">Gerencia</button></div>
+      ${msg ? `<div class="gto-aviso gto-aviso--info" role="status"><span class="i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v5h1"/></svg></span><div><p>${esc(msg)}</p></div></div>` : ''}
+      <div id="f-trab" style="display:grid;gap:14px">
+        <div class="gto-campo"><label for="l-nom">Tu nombre</label><select id="l-nom" class="gto-select"><option value="">— Elige tu nombre —</option>${(lista || []).map(p => `<option>${esc(p.nombre)}</option>`).join('')}</select></div>
+        <div class="gto-campo"><label for="l-dni">Tu DNI</label><input id="l-dni" class="gto-input" inputmode="numeric" maxlength="8" placeholder="8 dígitos"></div>
+        <div id="l-pinbox" class="hidden" style="display:grid;gap:14px"><div class="gto-campo"><label id="l-pinlbl" for="l-pin">PIN (6 números)</label><input id="l-pin" class="gto-input pin" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password"></div>
+          <div id="l-pin2box" class="hidden gto-campo"><label for="l-pin2">Repite tu nuevo PIN</label><input id="l-pin2" class="gto-input pin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password"></div></div>
+        <button class="gto-btn gto-btn--primario" id="l-ok" type="button" style="width:100%">Continuar</button>
+        <span class="gto-ayuda">La primera vez crearás un PIN de 6 números que solo tú conocerás. Si lo olvidas, pide al supervisor que lo restablezca.</span>
+      </div>
+      <div id="f-ger" class="hidden" style="display:grid;gap:14px">
+        <div class="gto-campo"><label for="g-mail">Correo</label><input id="g-mail" class="gto-input" type="email" autocomplete="username" placeholder="nombre@gtoperu.com"></div>
+        <div class="gto-campo"><label for="g-pass">Contraseña</label><input id="g-pass" class="gto-input" type="password" autocomplete="current-password"></div>
+        <a href="#" id="g-olv" class="olvido">¿Olvidaste tu contraseña?</a>
+        <button class="gto-btn gto-btn--primario" id="g-ok" type="button" style="width:100%">Ingresar</button>
+      </div>
+      <a class="volver" href="${GTO_MENU}">← Volver al menú</a>
+    </div></div></div></div>`;
   const tab = t => { $('#t-trab').classList.toggle('on', t === 'trab'); $('#t-ger').classList.toggle('on', t === 'ger'); $('#f-trab').classList.toggle('hidden', t !== 'trab'); $('#f-ger').classList.toggle('hidden', t !== 'ger'); };
   $('#t-trab').onclick = () => tab('trab'); $('#t-ger').onclick = () => tab('ger');
   if (location.hash.startsWith('#/aprobar')) tab('ger');
@@ -132,6 +135,7 @@ function pantallaClave() {
 
 // ---------- arranque ----------
 async function iniciar() {
+  document.body.classList.remove('en-login');
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return pantallaIngreso();
   if (TIPO_LINK === 'invite' || TIPO_LINK === 'recovery' || location.hash.startsWith('#/clave')) { history.replaceState(null, '', location.pathname + '#/clave'); return pantallaClave(); }

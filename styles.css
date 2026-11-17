@@ -41,3 +41,8 @@ tr.click{cursor:pointer}tr.click:hover td{background:var(--claro)}
 .sm-in{padding:5px 6px;font-size:13px;min-width:110px}.tabla-in input{padding:6px;font-size:13px;min-width:90px}
 @media print{.alerta-box{border:1px solid #f3c2bc!important;padding:8px!important}}
 .modal-box{max-width:920px}
+
+/* Inicio de sesión con la guía del Sistema Integrado GTO */
+.en-login header.top{display:none}
+.en-login main{max-width:none;padding:0}
+.en-login .gto .gto-login .olvido{justify-self:end}
