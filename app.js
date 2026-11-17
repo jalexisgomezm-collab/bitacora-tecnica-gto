@@ -158,7 +158,7 @@ async function iniciar() {
   clearInterval(window._avisoOT); window._avisoOT = setInterval(() => avisoOT(false), 5 * 60 * 1000);
 }
 // ---------- avisos de OT nuevas (creadas en el Maestro o aprobadas desde la Bitácora) ----------
-const DIAS_OT_NUEVAS = 7;
+const DIAS_OT_NUEVAS = 3;
 let OT_NUEVAS = [];
 const claveVistas = () => 'bit_ot_vistas_' + (YO ? YO.id : '');
 const otVistas = () => { try { return JSON.parse(localStorage.getItem(claveVistas()) || '[]'); } catch { return []; } };
@@ -170,6 +170,9 @@ async function avisoOT(inicio) {
   if (error) return;
   const antes = new Set(OT_NUEVAS.map(o => o.id));
   OT_NUEVAS = (data || []).filter(o => o.estado !== 'cancelado');
+  // primera vez en este equipo: solo se avisa lo creado en las últimas 24 h
+  let primera = false; try { primera = localStorage.getItem(claveVistas()) === null; } catch {}
+  if (primera) { const viejas = OT_NUEVAS.filter(o => Date.now() - new Date(o.created_at) > 864e5).map(o => o.id); try { localStorage.setItem(claveVistas(), JSON.stringify(viejas)); } catch {} }
   const nuevasAhora = OT_NUEVAS.filter(o => !antes.has(o.id));
   if (nuevasAhora.length && !inicio) CACHE.ot = null; // que las listas carguen la OT nueva
   pintarAvisoOT();
@@ -200,7 +203,7 @@ function bannerOT() {
   const caja = document.getElementById('banner-ot'); const vistas = otVistas();
   const sinVer = OT_NUEVAS.filter(o => !vistas.includes(o.id));
   if (!caja) return;
-  caja.innerHTML = sinVer.length ? `<div class="card banner-ot"><div class="row" style="justify-content:space-between"><b>${sinVer.length === 1 ? 'Se creó una OT nueva' : `Se crearon ${sinVer.length} OT nuevas`}</b><button class="sm" id="ot-visto">Entendido</button></div>${sinVer.map(o => filaOT(o, vistas)).join('')}</div>` : '';
+  caja.innerHTML = sinVer.length ? `<div class="card banner-ot"><div class="row" style="justify-content:space-between"><b>${sinVer.length === 1 ? 'Se creó una OT nueva' : `Se crearon ${sinVer.length} OT nuevas`}</b><button class="sm" id="ot-visto" style="flex:0 0 auto">Entendido</button></div>${sinVer.slice(0, 5).map(o => filaOT(o, vistas)).join('')}${sinVer.length > 5 ? `<div class="muted" style="padding:8px 14px">y ${sinVer.length - 5} más en la campana</div>` : ''}</div>` : '';
   const b = document.getElementById('ot-visto'); if (b) b.onclick = marcarOTVistas;
 }
 // aviso a Gerencia: informes esperando aprobación
