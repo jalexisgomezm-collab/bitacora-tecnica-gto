@@ -46,3 +46,17 @@ tr.click{cursor:pointer}tr.click:hover td{background:var(--claro)}
 .en-login header.top{display:none}
 .en-login main{max-width:none;padding:0}
 .en-login .gto .gto-login .olvido{justify-self:end}
+
+/* Avisos de OT nuevas */
+.campana-ot{position:relative;width:36px;height:36px;padding:0;border-radius:50%;justify-content:center;color:var(--verde-osc)}
+.campana-ot svg{width:19px;height:19px}
+.campana-ot .n{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--rojo);color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center}
+.panel-ot{position:fixed;top:58px;right:12px;z-index:40;width:min(400px,calc(100vw - 24px));max-height:70vh;overflow:auto;background:#fff;border:1px solid var(--borde);border-radius:14px;box-shadow:0 18px 44px rgba(10,30,20,.22)}
+.panel-ot-cab{display:flex;justify-content:space-between;align-items:baseline;padding:12px 14px;border-bottom:1px solid var(--borde)}
+.ot-nueva{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--borde);color:inherit;text-decoration:none}
+.ot-nueva:hover{background:var(--claro)}
+.ot-nueva .mono{font-weight:700;color:var(--verde-osc)}
+.ot-nueva b,.ot-nueva .muted{grid-column:1 / -1}
+.ot-nueva .chip{justify-self:start}
+.banner-ot{border-left:4px solid var(--verde);padding:0;overflow:hidden;margin-bottom:12px}
+.banner-ot>.row{padding:10px 14px;border-bottom:1px solid var(--borde)}

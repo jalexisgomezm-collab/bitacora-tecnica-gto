@@ -149,10 +149,59 @@ async function iniciar() {
   const links = [['#/', 'Mi día'], ['#/ot', 'OT / PI'], ['#/serie', 'Historial por serie'], ['#/reporte', 'Reporte']];
   if (esSup()) links.push(['#/ingresos', 'Componentes y proyectos'], ['#/borradores', 'Borradores de informes'], ['#/informes', 'Informes técnicos'], ['#/revision', 'Revisión'], ['#/personal', 'Personal']);
   $('#nav').innerHTML = links.map(([h, t]) => `<a href="${h}">${t}</a>`).join('');
-  $('#who').innerHTML = `<span>${esc(titleCase(nombreCorto(p.nombre)))} · ${esc(p.rol)}</span><button class="sm" id="salir">Salir</button>`;
+  $('#who').innerHTML = `<button class="campana-ot" id="avisos-ot" type="button" title="OT nuevas" aria-label="OT nuevas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="n hidden" id="avisos-n"></span></button><span>${esc(titleCase(nombreCorto(p.nombre)))} · ${esc(p.rol)}</span><button class="sm" id="salir">Salir</button>`;
+  $('#avisos-ot').onclick = e => { e.stopPropagation(); panelOT(); };
   $('#salir').onclick = async () => { await sb.auth.signOut(); YO = null; location.hash = '#/'; pantallaIngreso(); };
   router();
   avisoPendientes();
+  avisoOT(true);
+  clearInterval(window._avisoOT); window._avisoOT = setInterval(() => avisoOT(false), 5 * 60 * 1000);
+}
+// ---------- avisos de OT nuevas (creadas en el Maestro o aprobadas desde la Bitácora) ----------
+const DIAS_OT_NUEVAS = 7;
+let OT_NUEVAS = [];
+const claveVistas = () => 'bit_ot_vistas_' + (YO ? YO.id : '');
+const otVistas = () => { try { return JSON.parse(localStorage.getItem(claveVistas()) || '[]'); } catch { return []; } };
+function marcarOTVistas() { try { localStorage.setItem(claveVistas(), JSON.stringify([...new Set([...otVistas(), ...OT_NUEVAS.map(o => o.id)])].slice(-300))); } catch {} pintarAvisoOT(); }
+async function avisoOT(inicio) {
+  if (!YO) return;
+  const desde = new Date(Date.now() - DIAS_OT_NUEVAS * 864e5).toISOString();
+  const { data, error } = await sb.from('ot').select('id,numero,clase,nombre,cliente,estado,tipo,created_at').gte('created_at', desde).order('created_at', { ascending: false });
+  if (error) return;
+  const antes = new Set(OT_NUEVAS.map(o => o.id));
+  OT_NUEVAS = (data || []).filter(o => o.estado !== 'cancelado');
+  const nuevasAhora = OT_NUEVAS.filter(o => !antes.has(o.id));
+  if (nuevasAhora.length && !inicio) CACHE.ot = null; // que las listas carguen la OT nueva
+  pintarAvisoOT();
+  const sinVer = OT_NUEVAS.filter(o => !otVistas().includes(o.id));
+  const avisar = inicio ? sinVer : sinVer.filter(o => nuevasAhora.includes(o));
+  if (avisar.length) toast(avisar.length === 1 ? `Nueva ${avisar[0].clase === 'INTERNO' ? 'PI' : 'OT'}: ${avisar[0].numero} · ${avisar[0].nombre || avisar[0].cliente || ''}` : `Hay ${avisar.length} OT nuevas. Revisa la campana.`, 7000);
+  if (!location.hash || location.hash === '#/' || location.hash.startsWith('#/dia')) bannerOT();
+}
+function pintarAvisoOT() {
+  const n = OT_NUEVAS.filter(o => !otVistas().includes(o.id)).length, el = $('#avisos-n');
+  if (el) { el.textContent = n; el.classList.toggle('hidden', !n); }
+  bannerOT();
+}
+const filaOT = (o, vistas) => `<a class="ot-nueva" href="#/ot/${o.id}"><span class="mono">${esc(o.numero)}</span>${vistas.includes(o.id) ? '' : '<span class="chip rojo">Nueva</span>'}<b>${esc(o.nombre || '—')}</b><span class="muted">${esc(o.cliente || '')} · creada ${fdt(o.created_at)}</span></a>`;
+function panelOT() {
+  let p = document.getElementById('panel-ot');
+  if (p) { p.remove(); return; }
+  const vistas = otVistas();
+  p = document.createElement('div'); p.id = 'panel-ot'; p.className = 'panel-ot';
+  p.innerHTML = `<div class="panel-ot-cab"><b>OT nuevas</b><span class="muted">últimos ${DIAS_OT_NUEVAS} días</span></div>` +
+    (OT_NUEVAS.length ? OT_NUEVAS.map(o => filaOT(o, vistas)).join('') : '<div class="muted" style="padding:14px">No se crearon OT en los últimos días.</div>');
+  document.body.appendChild(p);
+  p.onclick = e => { if (e.target.closest('a')) p.remove(); };
+  setTimeout(() => document.addEventListener('click', function cerrar(e) { if (!p.contains(e.target)) { p.remove(); document.removeEventListener('click', cerrar); } }), 0);
+  marcarOTVistas();
+}
+function bannerOT() {
+  const caja = document.getElementById('banner-ot'); const vistas = otVistas();
+  const sinVer = OT_NUEVAS.filter(o => !vistas.includes(o.id));
+  if (!caja) return;
+  caja.innerHTML = sinVer.length ? `<div class="card banner-ot"><div class="row" style="justify-content:space-between"><b>${sinVer.length === 1 ? 'Se creó una OT nueva' : `Se crearon ${sinVer.length} OT nuevas`}</b><button class="sm" id="ot-visto">Entendido</button></div>${sinVer.map(o => filaOT(o, vistas)).join('')}</div>` : '';
+  const b = document.getElementById('ot-visto'); if (b) b.onclick = marcarOTVistas;
 }
 // aviso a Gerencia: informes esperando aprobación
 async function avisoPendientes() {
@@ -246,7 +295,8 @@ async function miDia(fecha) {
    <div class="card row no-print"><div><label>Fecha</label><input type="date" id="f-fecha" value="${fecha}" max="${hoyLima()}"></div>
    ${verTodos ? `<div><label>Técnico</label><select id="f-tec"><option value="">Todos</option>${tecnicos.map(t => `<option value="${t.id}">${esc(titleCase(t.nombre))}</option>`).join('')}</select></div>` : ''}
    <div style="flex:0 0 auto"><button class="pri" id="nuevo">+ Registrar avance</button></div></div>
-   <div id="kp" class="kpis"></div><div id="lista" style="margin-top:12px"><div class="loading">Cargando…</div></div>`;
+   <div id="banner-ot" class="no-print"></div><div id="kp" class="kpis"></div><div id="lista" style="margin-top:12px"><div class="loading">Cargando…</div></div>`;
+  bannerOT();
   $('#f-fecha').onchange = e => { location.hash = '#/dia/' + e.target.value; };
   const cargar = async () => {
     let q = sb.from('avances').select('*, ingreso:ingresos(codigo,nombre,cliente)').eq('fecha', fecha).order('created_at');
