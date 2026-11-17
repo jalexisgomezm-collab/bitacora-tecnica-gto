@@ -60,13 +60,9 @@ async function pantallaIngreso(msg) {
   document.body.classList.add('en-login');
   const GTO_MENU = 'https://sistema-integrado-gto.vercel.app';
   $('#app').innerHTML = `<div class="gto"><div class="gto-login" style="min-height:100vh">
-    <aside class="gto-sector-panel" aria-label="GTO Perú · Minería, industria y ferrovías">
-  <div class="gto-logo-placa"><img src="https://sistema-integrado-gto.vercel.app/assets/logo-gto.png" alt="GTO Electrónica y Eléctrico de Potencia"></div>
-  <h1 class="gto-sector-title">SISTEMA INTEGRADO<br>GTO <span>PERÚ</span></h1>
-  <div class="gto-sectores"><div class="gto-sector gto-sector--mina"><span>MINERÍA</span></div><div class="gto-sector gto-sector--industria"><span>INDUSTRIA</span></div><div class="gto-sector gto-sector--ferrea"><span>FERROVÍAS</span></div></div>
-</aside>
+    <div class="panel" role="img" aria-label="GTO · Minería, industria y ferrovías" style="background-image:url(${GTO_MENU}/assets/panel-sectores.jpg)"></div>
     <div class="form"><div class="caja">
-      <div class="marca"><img src="${GTO_MENU}/assets/icono-taller.png" alt=""><div><small>Sistema Integrado GTO</small><h2>Bitácora Técnica</h2></div></div>
+      <div class="marca"><img src="${GTO_MENU}/assets/icono-taller.png" alt=""><div><small>Sistema Integrado GTO</small><b>Bitácora Técnica</b></div></div>
       <div class="gto-segmento" role="tablist"><button id="t-trab" class="on" type="button">Trabajador</button><button id="t-ger" type="button">Gerencia</button></div>
       ${msg ? `<div class="gto-aviso gto-aviso--info" role="status"><span class="i"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v5h1"/></svg></span><div><p>${esc(msg)}</p></div></div>` : ''}
       <div id="f-trab" style="display:grid;gap:14px">
@@ -160,6 +156,9 @@ async function avisoPendientes() {
   const { count } = await sb.from('informes_borrador').select('id', { count: 'exact', head: true }).eq('estado', 'LISTO');
   const a = document.querySelector('#nav a[href="#/borradores"]'); if (a && count) a.innerHTML = `Borradores de informes <span class="chip rojo">${count}</span>`;
   if (count && !location.hash.startsWith('#/aprobar') && !location.hash.startsWith('#/borradores')) toast(`Tiene ${count} informe(s) técnico(s) pendiente(s) de aprobación`, 6000);
+  const { count: ni } = await sb.from('ingresos').select('id', { count: 'exact', head: true }).eq('estado', 'POR_APROBAR');
+  const b = document.querySelector('#nav a[href="#/ingresos"]'); if (b && ni) b.innerHTML = `Componentes y proyectos <span class="chip rojo">${ni}</span>`;
+  if (ni && !count && !location.hash.startsWith('#/ingresos')) toast(`Tiene ${ni} registro(s) de componentes / proyectos por aprobar`, 6000);
 }
 window.addEventListener('hashchange', () => { if (YO) router(); else if (location.hash.startsWith('#/clave')) iniciar(); });
 sb.auth.onAuthStateChange(ev => { if (ev === 'PASSWORD_RECOVERY') { location.hash = '#/clave'; pantallaClave(); } });
@@ -195,7 +194,7 @@ function tarjeta(a, per, otMap, fotos, opts = {}) {
   const o = otMap[a.ot_id] || {}; const t = per[a.tecnico_id];
   const puede = esSup() || (a.tecnico_id === YO.id && a.fecha >= new Date(Date.now() - 3 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Lima' }));
   return `<div class="av">
-    <div class="h"><div><b class="mono">${esc(o.numero || '—')}</b> <span class="muted">${esc(o.nombre || '')}</span></div>
+    <div class="h"><div>${!a.ot_id && a.ingreso ? `<b class="mono">${esc(a.ingreso.codigo)}</b> <span class="chip amb">sin OT · por aprobar</span> <span class="muted">${esc(a.ingreso.nombre || '')}</span>` : `<b class="mono">${esc(o.numero || '—')}</b> <span class="muted">${esc(o.nombre || '')}</span>`}</div>
       <div>${chipEstado(a.estado)} <span class="chip gris">${TIPOS[a.tipo_trabajo] || a.tipo_trabajo}</span> ${a.horas != null ? `<span class="chip gris">${a.horas} h</span>` : ''} ${a.revisado_at ? '<span class="chip" title="Revisado por el supervisor">✔ Revisado</span>' : ''} ${a.dias_repetidos >= 3 ? `<span class="chip rojo" title="Misma actividad varios días seguidos">⚠ Día ${a.dias_repetidos} seguido</span>` : ''}</div></div>
     <div class="muted">${opts.fecha ? fdate(a.fecha) + ' · ' : ''}${esc(titleCase(t?.nombre || ''))}${a.numero_serie ? ` · Serie <a href="#/serie/${encodeURIComponent(a.numero_serie)}" class="mono">${esc(a.numero_serie)}</a>` : ''}${a.equipo ? ' · ' + esc(a.equipo) : ''}</div>
     <p>${esc(a.actividad).replace(/\n/g, '<br>')}</p>
@@ -246,7 +245,7 @@ async function miDia(fecha) {
    <div id="kp" class="kpis"></div><div id="lista" style="margin-top:12px"><div class="loading">Cargando…</div></div>`;
   $('#f-fecha').onchange = e => { location.hash = '#/dia/' + e.target.value; };
   const cargar = async () => {
-    let q = sb.from('avances').select('*').eq('fecha', fecha).order('created_at');
+    let q = sb.from('avances').select('*, ingreso:ingresos(codigo,nombre,cliente)').eq('fecha', fecha).order('created_at');
     const tec = verTodos ? $('#f-tec')?.value : YO.id; if (tec) q = q.eq('tecnico_id', tec);
     const { data: avs } = await q; const fotos = await fotosFirmadas(avs || []);
     const horas = (avs || []).reduce((s, a) => s + (+a.horas || 0), 0);
@@ -262,12 +261,14 @@ async function miDia(fecha) {
 // ---------- formulario ----------
 async function formAvance(a, despues) {
   a = a || {}; const ots = await cargarOT();
+  const { data: pends } = await sb.from('ingresos').select('id,codigo,nombre,cliente').in('estado', ['BORRADOR', 'POR_APROBAR']).order('codigo');
+  const optI = i => `<option value="ing:${i.id}" ${!a.ot_id && i.id === a.ingreso_id ? 'selected' : ''}>${esc(i.codigo)} · ${esc((i.nombre || '').slice(0, 60))}${i.cliente ? ' · ' + esc(i.cliente) : ''}</option>`;
   const activos = ots.filter(o => o.estado !== 'finalizado' && o.estado !== 'cancelado');
   const opt = o => `<option value="${o.id}" ${o.id === a.ot_id ? 'selected' : ''}>${esc(o.numero)} · ${esc((o.nombre || '').slice(0, 70))}${o.cliente ? ' · ' + esc(o.cliente) : ''}</option>`;
   const otros = ots.filter(o => !activos.includes(o));
   modal(`<h1>${a.id ? 'Editar avance' : 'Registrar avance'}</h1>
    <div class="row"><div style="flex:2 1 320px"><label>OT / Proyecto interno *</label><select id="a-ot"><option value="">— Elige —</option>
-     <optgroup label="En curso">${activos.map(opt).join('')}</optgroup><optgroup label="Cerradas / historial">${otros.map(opt).join('')}</optgroup></select></div>
+     ${(pends || []).length ? `<optgroup label="Sin OT todavía (por aprobar)">${pends.map(optI).join('')}</optgroup>` : ''}<optgroup label="En curso">${activos.map(opt).join('')}</optgroup><optgroup label="Cerradas / historial">${otros.map(opt).join('')}</optgroup></select></div>
      <div><label>Fecha</label><input type="date" id="a-fecha" value="${a.fecha || hoyLima()}" max="${hoyLima()}" ${esSup() ? '' : 'min="' + new Date(Date.now() - 3 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Lima' }) + '"'}></div></div>
    <div class="row" style="margin-top:8px"><div style="flex:2 1 300px"><label>Equipo / componente</label><select id="a-comp"><option value="">— Sin componente específico —</option></select></div>
      <div><label>N° de serie</label><input id="a-serie" value="${esc(a.numero_serie || '')}" placeholder="Si no está en la lista"></div></div>
@@ -288,25 +289,31 @@ async function formAvance(a, despues) {
   const cargarComp = async () => {
     const id = $('#a-ot').value; const sel = $('#a-comp');
     sel.innerHTML = '<option value="">— Sin componente específico —</option>'; if (!id) return;
+    if (id.startsWith('ing:')) {
+      const { data } = await sb.from('ingreso_componentes').select('id,descripcion,marca,modelo,numero_serie').eq('ingreso_id', id.slice(4));
+      (data || []).forEach(c => sel.insertAdjacentHTML('beforeend', `<option value="ic:${c.id}" data-serie="${esc(c.numero_serie || '')}" data-eq="${esc([c.descripcion, c.marca, c.modelo].filter(Boolean).join(' '))}">${esc([c.descripcion, c.marca, c.modelo].filter(Boolean).join(' '))}${c.numero_serie ? ' · S/N ' + esc(c.numero_serie) : ''}</option>`));
+      return;
+    }
     const { data } = await sb.from('componentes').select('id,descripcion,marca,modelo,numero_serie').eq('ot_id', id);
     (data || []).forEach(c => sel.insertAdjacentHTML('beforeend', `<option value="${c.id}" ${c.id === a.componente_id ? 'selected' : ''} data-serie="${esc(c.numero_serie || '')}">${esc([c.descripcion, c.marca, c.modelo].filter(Boolean).join(' '))}${c.numero_serie ? ' · S/N ' + esc(c.numero_serie) : ''}</option>`));
   };
   let racha = (a.dias_repetidos || 1) - 1;
   const verRacha = async () => {
-    const ot = $('#a-ot').value; if (!ot) return;
+    const ot = $('#a-ot').value.replace(/^ing:/, ''); if (!ot) return;
     const { data } = await sb.rpc('racha_previa', { p_tecnico: a.tecnico_id || YO.id, p_fecha: $('#a-fecha').value, p_ot: ot, p_serie: $('#a-serie').value.trim() || null, p_tipo: $('#a-tipo').value, p_excluir: a.id || null });
     racha = data || 0; const box = $('#a-rep-box'); if (!box) return;
     box.classList.toggle('hidden', racha < 2); if (racha >= 2) $('#a-rep-tit').textContent = `⚠ Actividad repetida: sería el día ${racha + 1} seguido`;
   };
   $('#a-ot').onchange = async () => { await cargarComp(); verRacha(); }; await cargarComp();
-  $('#a-comp').onchange = e => { const s = e.target.selectedOptions[0]?.dataset.serie; if (s) $('#a-serie').value = s; verRacha(); };
+  $('#a-comp').onchange = e => { const op = e.target.selectedOptions[0]; const s = op?.dataset.serie; if (s) $('#a-serie').value = s; if (op?.dataset.eq && !$('#a-equipo').value.trim()) $('#a-equipo').value = op.dataset.eq; verRacha(); };
   ['#a-serie', '#a-tipo', '#a-fecha'].forEach(q => $(q).addEventListener('change', verRacha)); verRacha();
   $('#a-cancel').onclick = cerrarModal;
   $('#a-ok').onclick = async () => {
-    const reg = { ot_id: $('#a-ot').value, fecha: $('#a-fecha').value, componente_id: $('#a-comp').value || null, numero_serie: $('#a-serie').value.trim() || null,
+    const selOt = $('#a-ot').value, selC = $('#a-comp').value;
+    const reg = { ot_id: selOt.startsWith('ing:') ? null : (selOt || null), ingreso_id: selOt.startsWith('ing:') ? selOt.slice(4) : null, fecha: $('#a-fecha').value, componente_id: selC && !selC.startsWith('ic:') ? selC : null, numero_serie: $('#a-serie').value.trim() || null,
       equipo: $('#a-equipo').value.trim() || null, tipo_trabajo: $('#a-tipo').value, horas: $('#a-horas').value === '' ? null : +$('#a-horas').value,
       estado: $('#a-estado').value, motivo_repeticion: $('#a-mot').value || null, motivo_detalle: $('#a-motd').value.trim() || null, actividad: $('#a-act').value.trim(), hallazgos: $('#a-hal').value.trim() || null, repuestos: $('#a-rep').value.trim() || null, observaciones: $('#a-obs').value.trim() || null };
-    if (!reg.ot_id) return toast('Elige la OT o proyecto'); if (!reg.actividad) return toast('Describe el trabajo realizado');
+    if (!reg.ot_id && !reg.ingreso_id) return toast('Elige la OT o proyecto'); if (!reg.actividad) return toast('Describe el trabajo realizado');
     if (racha >= 2 && (!reg.motivo_repeticion || (reg.motivo_detalle || '').length < 10)) { $('#a-rep-box').classList.remove('hidden'); $('#a-rep-box').scrollIntoView({ behavior: 'smooth' }); return toast('Actividad repetida: indica el motivo y explica (mínimo 10 caracteres)', 5000); }
     const btn = $('#a-ok'); btn.disabled = true; btn.textContent = 'Guardando…';
     try {
@@ -359,7 +366,7 @@ async function vistaOT(id) {
   if (!o) { $('#app').innerHTML = '<div class="card">OT no encontrada.</div>'; return; }
   const [{ data: comps }, { data: infs }, { data: avs }] = await Promise.all([
     sb.from('componentes').select('*').eq('ot_id', id), esSup() ? sb.from('informes').select('*').eq('ot_id', id).order('numero') : Promise.resolve({ data: [] }),
-    sb.from('avances').select('*').eq('ot_id', id).order('fecha', { ascending: false }).order('created_at', { ascending: false })]);
+    sb.from('avances').select('*, ingreso:ingresos(codigo,nombre,cliente)').eq('ot_id', id).order('fecha', { ascending: false }).order('created_at', { ascending: false })]);
   const fotos = await fotosFirmadas(avs || []);
   const horas = (avs || []).reduce((s, a) => s + (+a.horas || 0), 0);
   let html = `<p class="no-print"><a href="#/ot">← OT / PI</a></p><h1><span class="mono">${esc(o.numero)}</span> · ${esc(o.nombre)}</h1>
@@ -387,7 +394,7 @@ async function vistaSerie(serie) {
   const per = await cargarPerfiles(); const ots = await cargarOT(); const otMap = Object.fromEntries(ots.map(o => [o.id, o]));
   const [{ data: comps }, { data: avs }] = await Promise.all([
     sb.from('componentes').select('*').ilike('numero_serie', `%${s}%`),
-    sb.from('avances').select('*').ilike('numero_serie', `%${s}%`).order('fecha', { ascending: false })]);
+    sb.from('avances').select('*, ingreso:ingresos(codigo,nombre,cliente)').ilike('numero_serie', `%${s}%`).order('fecha', { ascending: false })]);
   const otIds = [...new Set([...(comps || []).map(c => c.ot_id), ...(avs || []).map(a => a.ot_id)])];
   const { data: infs } = (otIds.length && esSup()) ? await sb.from('informes').select('*').in('ot_id', otIds).order('fecha', { ascending: false }) : { data: [] };
   const fotos = await fotosFirmadas(avs || []);
@@ -530,13 +537,13 @@ function htmlAlertas(al) {
 // ---------- componentes y proyectos (registro del supervisor → Maestro) ----------
 const TIPOS_OT = { REPARACION: 'Reparación', MANTENIMIENTO: 'Mantenimiento', DIAGNOSTICO: 'Diagnóstico', FABRICACION: 'Fabricación', OTRO: 'Otro' };
 const EST_LAB = { EN_ESPERA: ['En espera', 'gris'], DIAGNOSTICO: ['Diagnóstico', 'amb'], REPARACION: ['Reparación', 'amb'], PRUEBAS: ['Pruebas', 'amb'], TERMINADO: ['Terminado', ''], DESPACHADO: ['Despachado', 'gris'] };
-const EST_ING = { BORRADOR: ['Borrador', 'amb'], ENVIADO: ['En el Maestro', ''], ANULADO: ['Anulado', 'rojo'] };
+const EST_ING = { BORRADOR: ['Borrador', 'gris'], POR_APROBAR: ['Por aprobar (Gerencia)', 'amb'], ENVIADO: ['En el Maestro', ''], ANULADO: ['Anulado', 'rojo'] };
 const diasDesde = d => d ? Math.max(0, Math.round((new Date(hoyLima() + 'T12:00:00') - new Date(d + 'T12:00:00')) / 864e5)) : '';
 
 async function vistaIngresos(tab) {
   tab = tab || 'inventario';
   $('#app').innerHTML = `<h1>Componentes y proyectos</h1>
-   <div class="muted" style="margin-bottom:8px">Registra los componentes que llegan al laboratorio y los proyectos internos. Al pulsar <b>"Crear en el Maestro"</b> se crea la OT / PI con su número oficial (solo datos técnicos; la parte comercial la completa Gerencia).</div>
+   <div class="muted" style="margin-bottom:8px">Registra los componentes que llegan al laboratorio y los proyectos internos. El supervisor los guarda como <b>borrador</b> y los <b>envía a Gerencia</b>; recién cuando Gerencia los <b>aprueba</b> se crea la OT / PI en el Maestro. Si varios componentes son del mismo servicio, <b>únelos en un solo registro</b> antes de aprobar.</div>
    <div class="row no-print" style="margin-bottom:10px"><div style="flex:0 0 auto;display:flex;gap:6px;flex-wrap:wrap">
      <a class="btn ${tab === 'inventario' ? 'pri' : ''}" href="#/ingresos/inventario">Inventario del laboratorio</a>
      <a class="btn ${tab === 'registros' ? 'pri' : ''}" href="#/ingresos/registros">Registros</a></div>
@@ -552,7 +559,8 @@ async function vistaIngresos(tab) {
 }
 
 function pintarRegistros(ings) {
-  $('#ing-res').innerHTML = `<div class="card" style="padding:0;overflow:auto">${ings.length ? `<table><thead><tr><th>Código</th><th>Tipo</th><th>Servicio / proyecto</th><th>Cliente</th><th>Comp.</th><th>Recepción</th><th>Estado</th><th>OT / PI</th></tr></thead><tbody>${ings.map(i => `<tr class="click" data-ing="${i.id}"><td class="mono">${esc(i.codigo)}</td><td>${i.clase === 'INTERNO' ? 'Proyecto interno' : (i.modo === 'AGREGAR' ? 'Agregar a OT' : 'OT de servicio')}</td><td>${esc(i.nombre || '')}</td><td>${esc(i.cliente || '')}</td><td>${(i.ingreso_componentes || []).length}</td><td>${i.fecha_recepcion ? fdate(i.fecha_recepcion) : ''}</td><td><span class="chip ${EST_ING[i.estado][1]}">${EST_ING[i.estado][0]}</span></td><td class="mono">${esc(i.ot_numero || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="muted" style="padding:10px">Aún no hay registros. Usa los botones de arriba.</div>'}</div>`;
+  const pend = ings.filter(i => i.estado === 'POR_APROBAR');
+  $('#ing-res').innerHTML = (pend.length ? `<div class="card alerta-box" style="margin-bottom:10px"><b>${pend.length} registro(s) por aprobar.</b> ${esGer() ? 'Ábrelos para unirlos, aprobarlos (se crea la OT en el Maestro) o devolverlos al supervisor.' : 'Gerencia debe aprobarlos para que se cree la OT en el Maestro.'}</div>` : '') + `<div class="card" style="padding:0;overflow:auto">${ings.length ? `<table><thead><tr><th>Código</th><th>Tipo</th><th>Servicio / proyecto</th><th>Cliente</th><th>Comp.</th><th>Recepción</th><th>Estado</th><th>OT / PI</th></tr></thead><tbody>${ings.map(i => `<tr class="click" data-ing="${i.id}"><td class="mono">${esc(i.codigo)}</td><td>${i.clase === 'INTERNO' ? 'Proyecto interno' : (i.modo === 'AGREGAR' ? 'Agregar a OT' : 'OT de servicio')}</td><td>${esc(i.nombre || '')}</td><td>${esc(i.cliente || '')}</td><td>${(i.ingreso_componentes || []).length}</td><td>${i.fecha_recepcion ? fdate(i.fecha_recepcion) : ''}</td><td><span class="chip ${EST_ING[i.estado][1]}">${EST_ING[i.estado][0]}</span></td><td class="mono">${esc(i.ot_numero || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="muted" style="padding:10px">Aún no hay registros. Usa los botones de arriba.</div>'}</div>`;
   $('#ing-res').querySelectorAll('[data-ing]').forEach(r => r.onclick = () => detalleIngreso(ings.find(i => i.id === r.dataset.ing)));
 }
 
@@ -575,18 +583,26 @@ function pintarInventario(ings) {
 
 function detalleIngreso(i) {
   const comps = i.ingreso_componentes || [];
+  const abierto = ['BORRADOR', 'POR_APROBAR'].includes(i.estado);
   modal(`<h1><span class="mono">${esc(i.codigo)}</span> · ${esc(i.nombre || (i.modo === 'AGREGAR' ? 'Agregar componentes a OT' : ''))}</h1>
    <p><span class="chip ${EST_ING[i.estado][1]}">${EST_ING[i.estado][0]}</span> ${i.ot_numero ? `<a class="mono" href="#/ot/${i.ot_id}" onclick="cerrarModal()">${esc(i.ot_numero)}</a>` : ''}</p>
    <div class="muted">${i.clase === 'INTERNO' ? 'Proyecto interno' : 'Cliente: ' + esc(i.cliente || '—')} · ${esc(TIPOS_OT[i.tipo] || i.tipo || '')} · Prioridad ${esc(i.prioridad)}${i.guia ? ' · Guía ' + esc(i.guia) : ''}${i.fecha_recepcion ? ' · Recepción ' + fdate(i.fecha_recepcion) : ''}${i.fecha_entrega ? ' · Entrega estimada ' + fdate(i.fecha_entrega) : ''}</div>
    ${i.descripcion ? `<p>${esc(i.descripcion)}</p>` : ''}${i.estado === 'ANULADO' && i.error ? `<p class="alerta">Motivo de anulación: ${esc(i.error)}</p>` : ''}
+   ${i.aprobacion_comentario && ['BORRADOR', 'POR_APROBAR'].includes(i.estado) ? `<p class="alerta">Nota de Gerencia: ${esc(i.aprobacion_comentario)}</p>` : ''}
    <div style="overflow:auto">${comps.length ? `<table><thead><tr><th>Equipo</th><th>N° parte</th><th>N° serie</th><th>Cant.</th><th>Falla</th></tr></thead><tbody>${comps.map(c => `<tr><td>${esc([c.descripcion, c.marca, c.modelo].filter(Boolean).join(' '))}</td><td class="mono">${esc(c.numero_parte || '')}</td><td class="mono">${esc(c.numero_serie || '')}</td><td>${c.cantidad}</td><td>${esc(c.falla || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="muted">Sin componentes.</div>'}</div>
    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-    ${i.estado === 'BORRADOR' ? '<button id="d-edit">Editar</button><button class="peligro" id="d-anu">Anular</button><button class="pri" id="d-env">Crear en el Maestro</button>' : ''}
-    ${i.estado === 'ENVIADO' && i.modo === 'NUEVA' ? '<button class="peligro" id="d-anu">Anular OT</button>' : ''}<button id="d-x">Cerrar</button></div>`);
+    ${abierto ? '<button id="d-edit">Editar</button><button id="d-unir">Unir con otros registros</button><button class="peligro" id="d-anu">Anular</button>' : ''}
+    ${i.estado === 'BORRADOR' && !esGer() ? '<button class="pri" id="d-sol">Enviar a Gerencia</button>' : ''}
+    ${i.estado === 'POR_APROBAR' && esGer() ? '<button id="d-dev">Devolver</button>' : ''}
+    ${abierto && esGer() ? '<button class="pri" id="d-env">Aprobar y crear en el Maestro</button>' : ''}
+    ${i.estado === 'ENVIADO' && i.modo === 'NUEVA' && esGer() ? '<button class="peligro" id="d-anu">Anular OT</button>' : ''}<button id="d-x">Cerrar</button></div>`);
   $('#d-x').onclick = cerrarModal;
   if ($('#d-edit')) $('#d-edit').onclick = () => formIngreso(i);
   if ($('#d-env')) $('#d-env').onclick = () => enviarIngreso(i);
   if ($('#d-anu')) $('#d-anu').onclick = () => anularIngreso(i);
+  if ($('#d-sol')) $('#d-sol').onclick = () => solicitarAprobacion(i.id);
+  if ($('#d-dev')) $('#d-dev').onclick = () => devolverIngreso(i);
+  if ($('#d-unir')) $('#d-unir').onclick = () => unirIngresos(i);
 }
 
 async function formIngreso(i) {
@@ -612,7 +628,7 @@ async function formIngreso(i) {
    <h2>${pi ? 'Componentes / materiales del proyecto (opcional)' : 'Componentes recibidos *'}</h2>
    <div style="overflow:auto"><table class="tabla-in"><thead><tr><th>Descripción *</th><th>Marca</th><th>Modelo</th><th>N° parte</th><th>N° serie</th><th>Cant.</th><th>Falla reportada</th><th></th></tr></thead><tbody id="f-comps">${comps.map(filaC).join('')}</tbody></table></div>
    <button class="sm" id="f-addc" style="margin-top:6px">+ Otro componente</button>
-   <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button id="f-x">Cancelar</button><button id="f-bor">Guardar borrador</button><button class="pri" id="f-env">Guardar y crear en el Maestro</button></div>`);
+   <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button id="f-x">Cancelar</button><button id="f-bor">Guardar borrador</button><button class="pri" id="f-env">${esGer() ? 'Guardar, aprobar y crear en el Maestro' : 'Guardar y enviar a Gerencia'}</button></div>`);
   let modo = pi ? 'NUEVA' : (i.modo || 'NUEVA');
   if (!pi) {
     $('#m-nueva').onclick = () => { modo = 'NUEVA'; $('#m-nueva').classList.add('on'); $('#m-agr').classList.remove('on'); $('#f-nueva').classList.remove('hidden'); $('#f-agr').classList.add('hidden'); };
@@ -648,6 +664,7 @@ async function formIngreso(i) {
       else { const { data, error } = await sb.from('ingresos').insert(reg).select('id').single(); if (error) throw error; id = data.id; }
       if (cs.length) { const { error } = await sb.from('ingreso_componentes').insert(cs.map(c => ({ ...c, ingreso_id: id }))); if (error) throw error; }
       if (!enviar) { cerrarModal(); toast('Borrador guardado'); return vistaIngresos('registros'); }
+      if (!esGer()) return solicitarAprobacion(id);
       await enviarIngreso({ id, codigo: '' }, true);
     } catch (e) { toast(e.message, 6000); b1.disabled = b2.disabled = false; }
   };
@@ -656,15 +673,54 @@ async function formIngreso(i) {
 }
 
 async function enviarIngreso(i, sinConfirmar) {
-  if (!sinConfirmar && !confirm('Se creará la OT / PI en el Maestro con su número oficial (o se agregarán los componentes a la OT elegida). ¿Continuar?')) return;
+  if (!sinConfirmar && !confirm('Se creará la OT / PI en el Maestro con su número oficial (o se agregarán los componentes a la OT elegida). Revisa antes que los componentes del mismo servicio estén unidos en este registro. ¿Continuar?')) return;
   modal('<div class="loading">Creando en el Maestro…</div>');
   const { data, error } = await sb.rpc('enviar_ingreso', { p_id: i.id });
   if (error) { cerrarModal(); toast('No se pudo crear: ' + error.message, 7000); return vistaIngresos('registros'); }
   CACHE.ot = null;
   modal(`<h1>✔ Registrado en el Maestro</h1><p style="font-size:18px">OT / PI: <b class="mono">${esc(data.numero)}</b></p>
-    <p class="muted">Ya puedes registrar avances en esta OT. Gerencia completará la parte comercial (cotización, OC).</p>
+    <p class="muted">Los avances registrados mientras esperaba aprobación ya quedaron en esta OT. Completa la parte comercial (cotización, OC) en el Maestro.</p>
     <div style="display:flex;gap:8px;justify-content:flex-end"><a class="btn" href="#/ot/${esc(data.ot_id || '')}" onclick="cerrarModal()">Ver OT</a><button class="pri" id="ok-x">Aceptar</button></div>`);
   $('#ok-x').onclick = () => { cerrarModal(); vistaIngresos('registros'); };
+}
+
+async function solicitarAprobacion(id) {
+  const { error } = await sb.rpc('solicitar_aprobacion', { p_id: id });
+  cerrarModal();
+  if (error) { toast('No se pudo enviar: ' + error.message, 7000); return vistaIngresos('registros'); }
+  toast('Enviado a Gerencia para su aprobación', 5000); vistaIngresos('registros');
+}
+
+function devolverIngreso(i) {
+  modal(`<h1>Devolver ${esc(i.codigo)} al supervisor</h1><label>¿Qué debe corregir? *</label><textarea id="dv-c" placeholder="Ej. Une los 4 componentes de GPR en un solo registro"></textarea>
+   <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button id="dv-x">Cancelar</button><button class="pri" id="dv-ok">Devolver</button></div>`);
+  $('#dv-x').onclick = cerrarModal;
+  $('#dv-ok').onclick = async () => {
+    const c = $('#dv-c').value.trim(); if (!c) return toast('Escribe el comentario');
+    const { error } = await sb.rpc('devolver_ingreso', { p_id: i.id, p_comentario: c });
+    if (error) return toast(error.message, 6000);
+    cerrarModal(); toast('Devuelto al supervisor'); vistaIngresos('registros');
+  };
+}
+
+async function unirIngresos(i) {
+  const { data } = await sb.from('ingresos').select('id,codigo,nombre,cliente,estado,ingreso_componentes(descripcion,numero_serie)').in('estado', ['BORRADOR', 'POR_APROBAR']).eq('clase', i.clase).neq('id', i.id).order('created_at');
+  const otros = (data || []).sort((a, b) => ((b.cliente || '') === (i.cliente || '')) - ((a.cliente || '') === (i.cliente || '')));
+  if (!otros.length) return toast('No hay otros registros en borrador o por aprobar para unir');
+  modal(`<h1>Unir con ${esc(i.codigo)}</h1><p class="muted">Los componentes y los trabajos registrados de los registros marcados pasan a <b>${esc(i.codigo)}</b> (${esc(i.nombre || '')}); esos registros quedan anulados como "Unido a ${esc(i.codigo)}". Así se crea <b>una sola OT</b> para todo el servicio.</p>
+   <div style="overflow:auto"><table><thead><tr><th></th><th>Código</th><th>Servicio</th><th>Cliente</th><th>Componentes</th></tr></thead><tbody>${otros.map(o => `<tr><td><input type="checkbox" data-u="${o.id}" ${(o.cliente || '') === (i.cliente || '') && i.cliente ? 'checked' : ''}></td><td class="mono">${esc(o.codigo)}</td><td>${esc(o.nombre || '')}</td><td>${esc(o.cliente || '')}</td><td>${esc((o.ingreso_componentes || []).map(c => [c.descripcion, c.numero_serie].filter(Boolean).join(' · ')).join(' / '))}</td></tr>`).join('')}</tbody></table></div>
+   <div style="margin-top:8px"><label>Nombre del servicio para la OT única (opcional)</label><input id="u-nom" value="${esc(i.nombre || '')}"></div>
+   <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button id="u-x">Cancelar</button><button class="pri" id="u-ok">Unir</button></div>`);
+  $('#u-x').onclick = cerrarModal;
+  $('#u-ok').onclick = async () => {
+    const ids = [...document.querySelectorAll('[data-u]:checked')].map(x => x.dataset.u);
+    if (!ids.length) return toast('Marca al menos un registro');
+    const { error } = await sb.rpc('unir_ingresos', { p_destino: i.id, p_otros: ids });
+    if (error) return toast(error.message, 6000);
+    const nom = $('#u-nom').value.trim();
+    if (nom && nom !== i.nombre) await sb.from('ingresos').update({ nombre: nom }).eq('id', i.id);
+    cerrarModal(); toast(`${ids.length} registro(s) unidos en ${i.codigo}`, 5000); vistaIngresos('registros');
+  };
 }
 
 function anularIngreso(i) {
@@ -707,9 +763,9 @@ async function vistaReporte(fecha) {
   $('#r-per').onclick = async () => {
     const d = $('#r-d').value, h = $('#r-h').value; if (!d || !h || d > h) return toast('Revisa el periodo');
     const per = await cargarPerfiles(); const ots = await cargarOT(); const otMap = Object.fromEntries(ots.map(o => [o.id, o]));
-    const { data } = await sb.from('avances').select('*').gte('fecha', d).lte('fecha', h).order('fecha').order('created_at');
+    const { data } = await sb.from('avances').select('*, ingreso:ingresos(codigo,nombre,cliente)').gte('fecha', d).lte('fecha', h).order('fecha').order('created_at');
     if (!data?.length) return toast('Sin registros en el periodo');
-    const rows = data.map(a => ({ Fecha: a.fecha, Tecnico: per[a.tecnico_id]?.nombre, OT: otMap[a.ot_id]?.numero, Servicio: otMap[a.ot_id]?.nombre, Cliente: otMap[a.ot_id]?.cliente, Equipo: a.equipo, Serie: a.numero_serie, Tipo: TIPOS[a.tipo_trabajo], Trabajo: a.actividad, Hallazgos: a.hallazgos, Repuestos: a.repuestos, Horas: a.horas, Estado: ESTADOS[a.estado]?.[0], Revisado: a.revisado_at ? 'Sí' : 'No' }));
+    const rows = data.map(a => ({ Fecha: a.fecha, Tecnico: per[a.tecnico_id]?.nombre, OT: otMap[a.ot_id]?.numero || (a.ingreso ? a.ingreso.codigo + ' (por aprobar)' : ''), Servicio: otMap[a.ot_id]?.nombre || a.ingreso?.nombre, Cliente: otMap[a.ot_id]?.cliente || a.ingreso?.cliente, Equipo: a.equipo, Serie: a.numero_serie, Tipo: TIPOS[a.tipo_trabajo], Trabajo: a.actividad, Hallazgos: a.hallazgos, Repuestos: a.repuestos, Horas: a.horas, Estado: ESTADOS[a.estado]?.[0], Revisado: a.revisado_at ? 'Sí' : 'No' }));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Bitacora'); XLSX.writeFile(wb, `Bitacora_${d}_al_${h}.xlsx`);
   };
 }
@@ -720,7 +776,7 @@ async function vistaRevision() {
   $('#app').innerHTML = `<h1>Revisión de registros</h1><p class="muted">Registros de los últimos 15 días aún no revisados.</p><div id="tl"><div class="loading">Cargando…</div></div>`;
   const cargar = async () => {
     const desde = new Date(Date.now() - 15 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-    const { data: avs } = await sb.from('avances').select('*').is('revisado_at', null).gte('fecha', desde).order('fecha', { ascending: false });
+    const { data: avs } = await sb.from('avances').select('*, ingreso:ingresos(codigo,nombre,cliente)').is('revisado_at', null).gte('fecha', desde).order('fecha', { ascending: false });
     const fotos = await fotosFirmadas(avs || []);
     $('#tl').innerHTML = (avs || []).map(a => tarjeta(a, per, otMap, fotos, { fecha: true })).join('') || '<div class="card muted">Todo revisado. ✔</div>';
     enlazarTarjetas($('#tl'), avs || [], cargar);
@@ -766,4 +822,3 @@ async function vistaPersonal() {
 }
 
 iniciar();
-
