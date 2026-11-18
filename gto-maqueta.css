@@ -1,0 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&display=swap');
+/* Maqueta Sistema Integrado GTO aplicada a la Bitácora (18/11/2026). Solo presentación: no cambia datos, consultas ni acciones. */
+@media screen{
+body.gto-bit-shell:not(.en-login){font-family:Nunito,'Segoe UI',sans-serif;background:#F6F7F7}
+/* ---- Una sola barra verde ---- */
+body.gto-bit-shell:not(.en-login)>header.top{position:sticky;top:0;z-index:40;padding:0!important;background:#06612E!important;border:0!important;box-shadow:0 4px 16px #053B1E1f}
+body.gto-bit-shell>header.top>.brand,body.gto-bit-shell>header.top>#who{display:none!important}
+body.gto-bit-shell .gto-shared-toolbar{background:#06612E!important;border:0!important;border-radius:0!important;padding:12px 26px!important;color:#fff;gap:14px!important;min-height:76px}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-brand{gap:20px}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-brand img{width:clamp(120px,10vw,168px)!important;background:none!important;padding:0!important;border-radius:0!important;box-shadow:none!important}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-brand span{border-left:1px solid #FFFFFF40!important;padding-left:20px!important;color:#fff!important;display:flex;align-items:center;gap:12px;font:900 21px/1 Nunito,'Segoe UI',sans-serif!important;white-space:nowrap}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-brand span svg{width:28px;height:28px;flex:none}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-quick{padding-left:18px;border-left:1px solid #FFFFFF40;gap:10px;margin-right:auto}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-quick :is(button,a),body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-menu>summary{background:transparent!important;color:#fff!important;border:1.5px solid #FFFFFFB0!important;border-radius:10px!important;padding:7px 14px!important;gap:8px;font:800 14px/1.2 Nunito,'Segoe UI',sans-serif!important;box-shadow:none!important}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-quick :is(button,a):hover,body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-menu>summary:hover{background:#FFFFFF1f!important}
+body.gto-bit-shell .gto-shared-toolbar .gto-maq-ic{width:17px;height:17px;flex:none}
+body.gto-bit-shell .gto-shared-toolbar .barra>.chip{background:transparent!important;border:0!important;box-shadow:none!important;border-left:1px solid #FFFFFF40!important;border-radius:0!important;padding:0 4px 0 16px!important;min-height:44px;color:#fff}
+body.gto-bit-shell .gto-shared-toolbar .barra>.chip .ico{background:transparent!important;border:2px solid #fff;color:#fff!important;width:32px;height:32px}
+body.gto-bit-shell .gto-shared-toolbar .barra>.chip .ico svg{stroke:#fff}
+body.gto-bit-shell .gto-shared-toolbar .barra>.chip :is(.v,.l,small){color:#fff!important}
+body.gto-bit-shell .gto-shared-toolbar .barra>.chip .v{font-size:19px}
+body.gto-bit-shell .gto-shared-toolbar .barra>.chip.reloj .v{font-size:22px}
+body.gto-bit-shell .gto-shared-toolbar .barra>.chip .l{font-size:11px;max-width:170px;opacity:.9}
+body.gto-bit-shell .gto-shared-toolbar .barra>.chip.reloj .l{white-space:nowrap;max-width:none}
+body.gto-bit-shell .gto-shared-toolbar .barra>.chip .sal{display:none}
+body.gto-bit-shell .gto-shared-toolbar .barra :is(.gto-shared-bell,.gto-status-bell-only) button,body.gto-bit-shell .gto-shared-toolbar .barra :is(.gto-shared-bell,.gto-status-bell-only) button svg{background:transparent!important;color:#fff!important;stroke:#fff!important;border:0!important;box-shadow:none!important}
+body.gto-bit-shell .gto-shared-toolbar .barra :is(.gto-shared-bell,.gto-status-bell-only) button svg{width:24px!important;height:24px!important}
+/* Campana de OT nuevas de la Bitácora, en la barra */
+body.gto-bit-shell .gto-shared-toolbar .barra .campana-ot{background:transparent!important;border:0!important;box-shadow:none!important;color:#fff!important;width:44px;height:44px;display:grid;place-items:center;position:relative;cursor:pointer}
+body.gto-bit-shell .gto-shared-toolbar .barra .campana-ot svg{width:23px;height:23px;stroke:#fff}
+body.gto-bit-shell .panel-ot{top:calc(var(--gto-bit-top,76px) + 6px);z-index:50}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-popover{background:#fff!important;color:#1A2420!important;min-width:250px;max-width:min(300px,calc(100vw - 28px))}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-popover .gto-toolbar-account{color:#1A2420!important;overflow-wrap:anywhere;font-size:13px}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-popover :is(.gto-toolbar-action,button,a){background:#fff!important;color:#064925!important;border:1px solid #CBE1D3!important}
+body.gto-bit-shell .gto-shared-toolbar .gto-toolbar-popover :is(.gto-toolbar-action,button,a):hover{background:#E8F5EC!important}
+body.gto-bit-shell .gto-maq-oculto,body.gto-bit-shell .gto-shared-toolbar .gto-ot-shortcut{display:none!important}
+/* ---- Menú lateral ---- */
+.gto-bit-side{display:none}
+body.gto-bit-shell:not(.en-login) .gto-bit-side{display:flex;flex-direction:column;position:fixed;left:0;top:var(--gto-bit-top,76px);bottom:0;width:250px;z-index:20;overflow:auto;padding:26px 16px 120px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='250' height='220' fill='none' stroke='%23B9DFC7' stroke-width='1.5'%3E%3Cpath d='M0 200h60l40-40h60M20 220v-40l30-30h80l30-30M0 170h30l50-50h40'/%3E%3Ccircle cx='160' cy='160' r='4'/%3E%3Ccircle cx='190' cy='120' r='4'/%3E%3Ccircle cx='120' cy='120' r='4'/%3E%3C/svg%3E") left bottom no-repeat;border-right:1px solid #E1E8E4;font-family:Nunito,'Segoe UI',sans-serif}
+.gto-bit-side .gto-bit-mod{display:flex;align-items:center;gap:12px;padding:0 6px 26px}
+.gto-bit-side .gto-bit-mod img{width:40px;height:40px;border-radius:12px;background:#E8F5EC;padding:5px}
+.gto-bit-side .gto-bit-mod strong{font:900 19px/1.15 Nunito,sans-serif;color:#06612E}
+.gto-bit-side nav#nav{display:flex;flex-direction:column;gap:4px;flex-wrap:nowrap}
+.gto-bit-side nav#nav a{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;color:#1A2420;font:700 14px/1.25 Nunito,sans-serif;text-decoration:none}
+.gto-bit-side nav#nav a svg{width:19px;height:19px;flex:none;color:#077A3A}
+.gto-bit-side nav#nav a:hover{background:#F2FAF5}
+.gto-bit-side nav#nav a.on{background:#E8F5EC;color:#06612E;font-weight:900}
+.gto-bit-side nav#nav a .chip{margin-left:auto}
+.gto-bit-side .gto-bit-foot{margin-top:18px;padding:14px 6px 0;border-top:1px solid #E1E8E4;font:700 12px/1.4 Nunito,sans-serif;color:#636E68}
+/* ---- Contenido ---- */
+body.gto-bit-shell:not(.en-login)>main#app{margin:0 0 0 250px;max-width:none;padding:28px 34px 48px}
+body.gto-bit-shell:not(.en-login) main#app>*{max-width:1280px}
+body.gto-bit-shell:not(.en-login) main#app h1{font:900 26px/1.2 Nunito,sans-serif;color:#12462C;margin:4px 0 16px}
+body.gto-bit-shell:not(.en-login) main#app h2{font-family:Nunito,sans-serif;font-weight:900;color:#12462C}
+body.gto-bit-shell:not(.en-login) main#app .card{border:1px solid #E1E8E4;border-radius:14px;box-shadow:0 4px 16px #1E322810}
+body.gto-bit-shell:not(.en-login) main#app th{background:#06612E!important;color:#fff!important;font:800 13px Nunito,sans-serif!important}
+@media(max-width:900px){
+  body.gto-bit-shell:not(.en-login) .gto-bit-side{position:static;width:auto;padding:12px 12px;background-image:none;border-right:0;border-bottom:1px solid #E1E8E4}
+  .gto-bit-side .gto-bit-mod,.gto-bit-side .gto-bit-foot{display:none}
+  .gto-bit-side nav#nav{flex-direction:row;overflow-x:auto}
+  .gto-bit-side nav#nav a{white-space:nowrap;padding:8px 12px}
+  body.gto-bit-shell:not(.en-login)>main#app{margin:0;padding:16px}
+}
+}
