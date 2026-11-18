@@ -86,4 +86,20 @@ a.gto-bit-item:hover{background:#E8F5EC}
 .gto-bit-vacio{margin:0 0 6px;font:600 13px Nunito,sans-serif;color:#636E68}
 .gto-bit-error{padding:10px 12px;border-radius:8px;background:#FFF1D6;color:#7D4300;font:700 13px Nunito,sans-serif}
 .gto-bit-leer{margin-top:12px;background:#E8F5EC;color:#06612E;border:1px solid #CBE1D3;border-radius:8px;padding:9px 14px;font:800 13px Nunito,sans-serif;cursor:pointer}
+/* ---- OT / PI separadas y estados con color ---- */
+.seg-ot{display:inline-flex;gap:4px;padding:5px;margin:0 0 14px;background:#fff;border:1px solid #E1E8E4;border-radius:14px;box-shadow:0 2px 8px #1E32280d}
+.seg-ot button{display:inline-flex;align-items:center;gap:8px;border:0;background:transparent;border-radius:10px;padding:10px 16px;font:800 14px Nunito,'Segoe UI',sans-serif;color:#3C4540;cursor:pointer}
+.seg-ot button .n{min-width:22px;height:22px;padding:0 7px;border-radius:99px;background:#E8F5EC;color:#06612E;font-size:12px;line-height:22px;text-align:center}
+.seg-ot button.on{background:#06612E;color:#fff}
+.seg-ot button.on .n{background:#fff;color:#06612E}
+.gto-bit-shell main#app td.mono{white-space:nowrap}
+.leyenda-est{display:flex;flex-wrap:wrap;gap:8px;margin:-2px 0 10px}
+.chip.est{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;font-weight:800;font-size:12px;white-space:nowrap}
+.chip.est::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip.est-ini{background:#FFF1D6;color:#9A4A00}
+.chip.est-pro{background:#E3EDFF;color:#1B56C2}
+.chip.est-ter{background:#E8F5EC;color:#066A33}
+.chip.est-ent{background:#E6EEEA;color:#3C5A4A}
+.chip.est-fin{background:#EEF0F2;color:#5F6B77}
+.chip.est-can{background:#FDE6E6;color:#B4232A}
 }

@@ -393,17 +393,32 @@ async function formAvance(a, despues) {
 }
 
 // ---------- OT / PI ----------
+// Estado operativo con color (Por iniciar ámbar, En proceso azul, Terminado verde, Entregado gris verdoso)
+const EST_OP_BIT = { POR_INICIAR: ['Por iniciar', 'est-ini'], EN_PROCESO: ['En proceso', 'est-pro'], TERMINADO: ['Terminado', 'est-ter'], ENTREGADO: ['Entregado', 'est-ent'], finalizado: ['Finalizado', 'est-fin'], cancelado: ['Cancelado', 'est-can'] };
+const chipOp = o => { const k = o.estado === 'cancelado' ? 'cancelado' : (o.estado_operativo || o.estado || ''); const v = EST_OP_BIT[k]; return `<span class="chip est ${v ? v[1] : 'gris'}">${esc(v ? v[0] : k)}</span>`; };
+const esPI = o => o.clase === 'INTERNO' || /^PI-/i.test(o.numero || '');
+let OT_TAB = 'ot';
 async function listaOT() {
   const ots = await cargarOT();
-  $('#app').innerHTML = `<h1>OT y Proyectos Internos</h1><div class="card row"><div><label>Buscar</label><input id="q" placeholder="N° de OT, nombre o cliente"></div>
-   <div style="flex:0 0 200px"><label>Mostrar</label><select id="fil"><option value="act">En curso</option><option value="">Todas</option></select></div></div>
-   <div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>N°</th><th>Servicio / proyecto</th><th>Cliente</th><th>Estado</th></tr></thead><tbody id="tb"></tbody></table></div>`;
+  $('#app').innerHTML = `<h1>OT y Proyectos Internos</h1>
+   <div class="seg-ot" role="tablist"><button type="button" data-tab="ot">Servicios a clientes · OT <span class="n" id="n-ot"></span></button><button type="button" data-tab="pi">Proyectos internos · PI <span class="n" id="n-pi"></span></button></div>
+   <div class="card row"><div><label>Buscar</label><input id="q" placeholder="N°, nombre o cliente"></div>
+   <div style="flex:0 0 200px"><label>Estado</label><select id="fil"><option value="act">En curso</option><option value="POR_INICIAR">Por iniciar</option><option value="EN_PROCESO">En proceso</option><option value="TERMINADO">Terminado</option><option value="ENTREGADO">Entregado</option><option value="">Todas</option></select></div></div>
+   <div class="leyenda-est"><span class="chip est est-ini">Por iniciar</span><span class="chip est est-pro">En proceso</span><span class="chip est est-ter">Terminado</span><span class="chip est est-ent">Entregado</span></div>
+   <div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>N°</th><th id="th-nom">Servicio</th><th id="th-cli">Cliente</th><th>Estado</th></tr></thead><tbody id="tb"></tbody></table></div>`;
   const pintar = () => {
-    const q = $('#q').value.toLowerCase(), f = $('#fil').value;
-    const l = ots.filter(o => (!f || (o.estado !== 'finalizado' && o.estado !== 'cancelado')) && (!q || [o.numero, o.nombre, o.cliente].join(' ').toLowerCase().includes(q)));
-    $('#tb').innerHTML = l.map(o => `<tr class="click" data-id="${o.id}"><td class="mono">${esc(o.numero)}</td><td>${esc(o.nombre)}</td><td>${esc(o.cliente || (o.clase === 'INTERNO' ? 'Proyecto interno' : ''))}</td><td><span class="chip gris">${esc(o.estado_operativo || o.estado || '')}</span></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Sin resultados</td></tr>';
+    const q = $('#q').value.toLowerCase(), f = $('#fil').value, pi = OT_TAB === 'pi';
+    const enCurso = o => o.estado !== 'finalizado' && o.estado !== 'cancelado';
+    const pasa = o => !f || (f === 'act' ? enCurso(o) : (enCurso(o) && o.estado_operativo === f));
+    const grupo = ots.filter(o => esPI(o) === pi);
+    $('#n-ot').textContent = ots.filter(o => !esPI(o) && pasa(o)).length; $('#n-pi').textContent = ots.filter(o => esPI(o) && pasa(o)).length;
+    document.querySelectorAll('.seg-ot button').forEach(b => b.classList.toggle('on', b.dataset.tab === OT_TAB));
+    $('#th-nom').textContent = pi ? 'Proyecto interno' : 'Servicio'; $('#th-cli').textContent = pi ? 'Área' : 'Cliente';
+    const l = grupo.filter(o => pasa(o) && (!q || [o.numero, o.nombre, o.cliente].join(' ').toLowerCase().includes(q)));
+    $('#tb').innerHTML = l.map(o => `<tr class="click" data-id="${o.id}"><td class="mono">${esc(o.numero)}</td><td>${esc(o.nombre)}</td><td>${esc(o.cliente || (pi ? 'Proyecto interno' : ''))}</td><td>${chipOp(o)}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">Sin ${pi ? 'proyectos internos' : 'OT'} para este filtro</td></tr>`;
     $('#tb').querySelectorAll('tr[data-id]').forEach(r => r.onclick = () => location.hash = '#/ot/' + r.dataset.id);
   };
+  document.querySelectorAll('.seg-ot button').forEach(b => b.onclick = () => { OT_TAB = b.dataset.tab; pintar(); });
   $('#q').oninput = pintar; $('#fil').onchange = pintar; pintar();
 }
 
@@ -443,9 +458,40 @@ async function vistaOT(id) {
 
 // ---------- historial por serie ----------
 async function vistaSerie(serie) {
-  $('#app').innerHTML = `<h1>Historial clínico por N° de serie</h1><div class="card row"><div><label>N° de serie</label><input id="s-q" value="${esc(serie)}" placeholder="Ej. 2143001349"></div><div style="flex:0 0 auto"><button class="pri" id="s-ok">Buscar</button></div></div><div id="s-res"></div>`;
-  const ir = () => { const v = $('#s-q').value.trim(); if (v) location.hash = '#/serie/' + encodeURIComponent(v); };
-  $('#s-ok').onclick = ir; $('#s-q').onkeydown = e => e.key === 'Enter' && ir();
+  const ots0 = await cargarOT();
+  const clientes = [...new Set(ots0.map(o => (o.cliente || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  $('#app').innerHTML = `<h1>Historial clínico de equipos</h1>
+   <div class="card"><div class="row">
+     <div><label>Cliente</label><input id="s-cli" list="s-clis" placeholder="Todos los clientes"><datalist id="s-clis">${clientes.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
+     <div><label>Descripción del equipo</label><input id="s-des" placeholder="Ej. variador, tarjeta, transmisor"></div>
+     <div><label>Marca o modelo</label><input id="s-mod" placeholder="Ej. ACS2000, 17FB173A4"></div>
+     <div><label>N° de serie</label><input id="s-q" value="${esc(serie)}" placeholder="Ej. 2143001349"></div>
+   </div><div class="row" style="margin-top:10px;justify-content:flex-end"><div style="flex:0 0 auto"><button id="s-lim" type="button">Limpiar</button></div><div style="flex:0 0 auto"><button class="pri" id="s-ok" type="button">Buscar</button></div></div></div>
+   <div id="s-lista"></div><div id="s-res"></div>`;
+  const limpio = v => v.trim().replace(/[%,()*]/g, ' ').replace(/\s+/g, ' ').trim();
+  const buscar = async () => {
+    const cli = limpio($('#s-cli').value), des = limpio($('#s-des').value), mod = limpio($('#s-mod').value), ser = limpio($('#s-q').value);
+    if (!cli && !des && !mod && !ser) return toast('Escribe al menos un dato para buscar');
+    if (ser && !cli && !des && !mod) { location.hash = '#/serie/' + encodeURIComponent(ser); return; }
+    $('#s-res').innerHTML = ''; $('#s-lista').innerHTML = '<div class="card muted">Buscando…</div>';
+    const ots = await cargarOT(); const otMap = Object.fromEntries(ots.map(o => [o.id, o]));
+    let q1 = sb.from('componentes').select('id,ot_id,descripcion,marca,modelo,numero_serie').limit(300);
+    let q2 = sb.from('ingreso_componentes').select('id,descripcion,marca,modelo,numero_serie,ingreso:ingresos(codigo,nombre,cliente,estado)').limit(300);
+    if (des) { q1 = q1.ilike('descripcion', `%${des}%`); q2 = q2.ilike('descripcion', `%${des}%`); }
+    if (ser) { q1 = q1.ilike('numero_serie', `%${ser}%`); q2 = q2.ilike('numero_serie', `%${ser}%`); }
+    if (mod) { q1 = q1.or(`modelo.ilike.%${mod}%,marca.ilike.%${mod}%`); q2 = q2.or(`modelo.ilike.%${mod}%,marca.ilike.%${mod}%`); }
+    if (cli) { const ids = ots.filter(o => (o.cliente || '').toLowerCase().includes(cli.toLowerCase())).map(o => o.id); q1 = ids.length ? q1.in('ot_id', ids) : null; }
+    const [r1, r2] = await Promise.all([q1 || Promise.resolve({ data: [] }), q2]);
+    if (r1.error && r2.error) { $('#s-lista').innerHTML = `<div class="card muted">No se pudo buscar: ${esc(r1.error.message)}</div>`; return; }
+    const filas = [];
+    for (const c of r1.data || []) { const o = otMap[c.ot_id] || {}; filas.push({ codigo: o.numero || '', servicio: o.nombre || '', cliente: o.cliente || '', c, ir: c.numero_serie ? '#/serie/' + encodeURIComponent(c.numero_serie) : '#/ot/' + c.ot_id }); }
+    for (const c of r2.data || []) { const i = c.ingreso || {}; if (cli && !(i.cliente || '').toLowerCase().includes(cli.toLowerCase())) continue; if (filas.some(f => f.c.numero_serie && f.c.numero_serie === c.numero_serie)) continue; filas.push({ codigo: i.codigo || '', servicio: i.nombre || '', cliente: i.cliente || '', c, ir: c.numero_serie ? '#/serie/' + encodeURIComponent(c.numero_serie) : '#/ingresos', sinOT: true }); }
+    $('#s-lista').innerHTML = `<h2>Equipos encontrados · ${filas.length}</h2><div class="card" style="padding:0;overflow:auto">${filas.length ? `<table><thead><tr><th>OT / ingreso</th><th>Cliente</th><th>Equipo</th><th>Marca / modelo</th><th>N° serie</th></tr></thead><tbody>${filas.map(f => `<tr class="click" data-ir="${esc(f.ir)}"><td class="mono">${esc(f.codigo)}${f.sinOT ? ' <span class="chip amb">sin OT</span>' : ''}</td><td>${esc(f.cliente)}</td><td>${esc(f.c.descripcion || '')}<div class="muted">${esc(f.servicio)}</div></td><td>${esc([f.c.marca, f.c.modelo].filter(Boolean).join(' · '))}</td><td class="mono">${esc(f.c.numero_serie || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="muted" style="padding:10px">No se encontraron equipos con esos datos.</div>'}</div>${filas.length >= 300 ? '<p class="muted">Se muestran los primeros 300 resultados; agrega otro dato para afinar.</p>' : ''}<p class="muted">Haz clic en un equipo para ver su historial completo.</p>`;
+    $('#s-lista').querySelectorAll('tr[data-ir]').forEach(r => r.onclick = () => location.hash = r.dataset.ir);
+  };
+  $('#s-ok').onclick = buscar;
+  $('#s-lim').onclick = () => { ['s-cli', 's-des', 's-mod', 's-q'].forEach(i => $('#' + i).value = ''); $('#s-lista').innerHTML = ''; $('#s-res').innerHTML = ''; if (location.hash !== '#/serie') location.hash = '#/serie'; };
+  ['s-cli', 's-des', 's-mod', 's-q'].forEach(i => $('#' + i).onkeydown = e => e.key === 'Enter' && buscar());
   if (!serie) return;
   const s = serie.toUpperCase().replace(/[%,()]/g, '');
   const per = await cargarPerfiles(); const ots = await cargarOT(); const otMap = Object.fromEntries(ots.map(o => [o.id, o]));
