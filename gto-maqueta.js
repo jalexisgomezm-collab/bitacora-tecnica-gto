@@ -66,6 +66,15 @@
         const f = new Date(o.created_at).toLocaleString('es-PE', { timeZone: 'America/Lima', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
         lista.push({ key: `sem-${o.id}`, grupo: 'semana', titulo: `${o.numero} · ${o.nombre || ''}`.trim(), texto: [o.cliente, 'registrada ' + f].filter(Boolean).join(' · '), href: `#/ot/${o.id}` });
       }
+      // Revisión de registros: aviso al supervisor (y a Gerencia, que puede revisar en su lugar)
+      if (typeof esSup === 'function' && esSup()) {
+        const { data: sinRev } = await sb.from('avances').select('id,fecha').is('revisado_at', null).gte('fecha', sumar(d, -15)).lt('fecha', d).order('fecha');
+        const n = (sinRev || []).length;
+        if (n) {
+          const ger = typeof esGer === 'function' && esGer();
+          lista.push({ key: `rev-${d}-${n}`, grupo: 'revision', titulo: `${n} registro(s) de días anteriores sin revisar`, texto: ger ? 'Le corresponde revisarlos al supervisor. Puedes revisarlos tú; quedará tu nombre como revisor.' : 'Revísalos desde Revisión.', etiqueta: `El más antiguo es del ${ddmm(sinRev[0].fecha)}`, href: '#/revision', alerta: n >= 10, aviso: n < 10 });
+        }
+      }
       errorTxt = '';
     } catch (e) { errorTxt = 'No se pudieron consultar las OT. Recarga la página para reintentar.'; }
     avisos = lista; cargando = false; ultimo = Date.now(); pintarBandeja();
@@ -124,6 +133,7 @@
     };
     if (errorTxt) { const p = document.createElement('p'); p.className = 'gto-bit-error'; p.textContent = errorTxt; lista.append(p); }
     if (cargando && !avisos.length) { const p = document.createElement('p'); p.className = 'gto-bit-vacio'; p.textContent = 'Consultando OT…'; lista.append(p); }
+    const rev = todos.filter(a => a.grupo === 'revision'); if (rev.length) sec('Revisión de registros', rev);
     sec('Visitas y pedidos de clientes', todos.filter(a => a.grupo === 'taller'), 'Sin visitas ni pedidos de urgencia registrados para estos días.');
     sec('Entregas próximas y atrasadas', todos.filter(a => a.grupo === 'entregas'), 'Ninguna OT con entrega en los próximos 7 días.');
     sec('OT registradas esta semana', todos.filter(a => a.grupo === 'semana'), 'Aún no se registran OT esta semana.');

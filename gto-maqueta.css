@@ -102,4 +102,20 @@ a.gto-bit-item:hover{background:#E8F5EC}
 .chip.est-ent{background:#E6EEEA;color:#3C5A4A}
 .chip.est-fin{background:#EEF0F2;color:#5F6B77}
 .chip.est-can{background:#FDE6E6;color:#B4232A}
+/* ---- Jornada del día y aviso de revisión ---- */
+.jornada-card h3{margin:0 0 10px;font:900 15px Nunito,sans-serif;color:#12462C}
+.jornada{padding:8px 0;border-top:1px solid #EEF2EF}
+.jornada:first-of-type{border-top:0}
+.jornada-h{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font:700 13px Nunito,sans-serif;color:#3C4540}
+.jornada-h b{color:#1A2420;font-weight:900}
+.jornada-barra{display:flex;height:12px;margin:6px 0 5px;border-radius:99px;background:#F1F3F2;overflow:hidden}
+.jornada-barra span{display:block;height:100%}
+.jb-ot{background:#0A8A43}.jb-int{background:#3B82C4}.jb-falta{background:#D9DEDB}
+.jornada-ley{display:flex;gap:14px;flex-wrap:wrap;font:700 12px Nunito,sans-serif;color:#636E68}
+.jornada-ley i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.jornada-cerrar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border-radius:10px;background:#F2F7FC;border:1px solid #D6E4F2;font:600 13px Nunito,sans-serif;color:#1A2420}
+.jornada-cerrar button{white-space:nowrap}
+.jornada-nota{margin:8px 0 0;font-size:12px}
+.aviso-rev{background:#FFF6E5!important;border:1px solid #F1D7A6!important;color:#5C3B00;font:600 14px Nunito,sans-serif}
+.aviso-rev a{color:#06612E;font-weight:800;margin-left:6px}
 }

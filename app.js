@@ -251,7 +251,7 @@ function tarjeta(a, per, otMap, fotos, opts = {}) {
   const puede = esSup() || (a.tecnico_id === YO.id && a.fecha >= new Date(Date.now() - 3 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Lima' }));
   return `<div class="av">
     <div class="h"><div>${!a.ot_id && a.ingreso ? `<b class="mono">${esc(a.ingreso.codigo)}</b> <span class="chip amb">sin OT · por aprobar</span> <span class="muted">${esc(a.ingreso.nombre || '')}</span>` : `<b class="mono">${esc(o.numero || '—')}</b> <span class="muted">${esc(o.nombre || '')}</span>`}</div>
-      <div>${chipEstado(a.estado)} <span class="chip gris">${TIPOS[a.tipo_trabajo] || a.tipo_trabajo}</span> ${a.horas != null ? `<span class="chip gris">${a.horas} h</span>` : ''} ${a.revisado_at ? '<span class="chip" title="Revisado por el supervisor">✔ Revisado</span>' : ''} ${a.dias_repetidos >= 3 ? `<span class="chip rojo" title="Misma actividad varios días seguidos">⚠ Día ${a.dias_repetidos} seguido</span>` : ''}</div></div>
+      <div>${chipEstado(a.estado)} <span class="chip gris">${TIPOS[a.tipo_trabajo] || a.tipo_trabajo}</span> ${a.horas != null ? `<span class="chip gris">${a.horas} h</span>` : ''} ${a.revisado_at ? `<span class="chip" title="Revisado el ${esc(fdate(String(a.revisado_at).slice(0, 10)))}">✔ Revisado${per[a.revisado_por] ? ' por ' + esc(titleCase(nombreCorto(per[a.revisado_por].nombre))) : ''}</span>` : ''} ${a.dias_repetidos >= 3 ? `<span class="chip rojo" title="Misma actividad varios días seguidos">⚠ Día ${a.dias_repetidos} seguido</span>` : ''}</div></div>
     <div class="muted">${opts.fecha ? fdate(a.fecha) + ' · ' : ''}${esc(titleCase(t?.nombre || ''))}${a.numero_serie ? ` · Serie <a href="#/serie/${encodeURIComponent(a.numero_serie)}" class="mono">${esc(a.numero_serie)}</a>` : ''}${a.equipo ? ' · ' + esc(a.equipo) : ''}</div>
     <p>${esc(a.actividad).replace(/\n/g, '<br>')}</p>
     ${a.hallazgos ? `<p><span class="k">HALLAZGOS:</span> ${esc(a.hallazgos).replace(/\n/g, '<br>')}</p>` : ''}
@@ -288,6 +288,58 @@ function enlazarTarjetas(cont, avs, recargar) {
   });
 }
 
+// ---------- jornada (9.5 h efectivas, sin refrigerio) y actividades internas ----------
+const JORNADA_H = 9.5; // lunes a viernes; sábados, domingos y feriados no tienen meta
+const ACT_INTERNAS = {
+  LIMPIEZA_ORDEN: ['Limpieza y orden del laboratorio / taller', 'LIMPIEZA'],
+  HERRAMIENTAS: ['Mantenimiento de herramientas y equipos de prueba', 'MANTENIMIENTO'],
+  CHARLA: ['Charla de seguridad / capacitación', 'OTRO'],
+  ESPERA: ['Espera de repuestos o materiales', 'OTRO'],
+  APOYO: ['Apoyo a otra área, compras o trámites', 'OTRO'],
+  REUNION: ['Reunión de coordinación', 'OTRO']
+};
+// PI del Maestro para registrar lo que no es OT (se busca por nombre: "ACTIVIDADES INTERNAS")
+const piInterno = ots => ots.find(o => esPI(o) && /ACTIVIDADES\s+INTERNAS/i.test(o.nombre || '') && o.estado !== 'cancelado') || null;
+async function metaJornada(fecha) {
+  const dia = new Date(fecha + 'T12:00:00Z').getUTCDay();
+  if (dia === 0 || dia === 6) return 0;
+  const { data } = await sb.from('feriados').select('fecha').eq('fecha', fecha).maybeSingle();
+  return data ? 0 : JORNADA_H;
+}
+const fmtH = h => (Math.round(h * 100) / 100).toString().replace(/\.0+$/, '');
+function barraJornada(nombre, hOt, hInt, meta) {
+  const total = hOt + hInt, falta = meta ? Math.max(0, meta - total) : 0, base = Math.max(meta || 0, total) || 1;
+  const pct = meta ? Math.min(100, Math.round(total / meta * 100)) : null;
+  const seg = (h, c, t) => h > 0 ? `<span class="jb-${c}" style="width:${(h / base * 100).toFixed(2)}%" title="${t}: ${fmtH(h)} h"></span>` : '';
+  return `<div class="jornada"><div class="jornada-h"><b>${esc(nombre)}</b><span>${meta ? `${fmtH(total)} de ${fmtH(meta)} h · ${pct}% de la jornada explicada` : `${fmtH(total)} h registradas (día sin jornada fija)`}</span></div>
+    <div class="jornada-barra">${seg(hOt, 'ot', 'Trabajo en OT / PI')}${seg(hInt, 'int', 'Actividades internas')}${seg(falta, 'falta', 'Por detallar')}</div>
+    <div class="jornada-ley"><span><i class="jb-ot"></i>OT / PI ${fmtH(hOt)} h</span><span><i class="jb-int"></i>Actividades internas ${fmtH(hInt)} h</span>${meta ? `<span><i class="jb-falta"></i>Por detallar ${fmtH(falta)} h</span>` : ''}</div></div>`;
+}
+async function formInterna(base, despues) {
+  const ots = await cargarOT(); const pi = piInterno(ots);
+  if (!pi) return toast('Falta el proyecto interno "ACTIVIDADES INTERNAS" en el Maestro. Pide a Gerencia que lo cree.', 6000);
+  const porDefecto = new Date().toLocaleString('en-US', { timeZone: 'America/Lima', hour: 'numeric', hour12: false }) < 12 ? 'LIMPIEZA_ORDEN' : 'HERRAMIENTAS';
+  modal(`<h1>Actividad interna</h1>
+   <p class="muted">Para lo que no es trabajo de una OT: limpieza, orden, charlas, esperas, apoyo a otras áreas. Cuenta dentro de tu jornada.</p>
+   <div class="row"><div style="flex:2 1 280px"><label>Actividad *</label><select id="i-cat">${Object.entries(ACT_INTERNAS).map(([k, v]) => `<option value="${k}" ${k === porDefecto ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></div>
+     <div><label>Fecha</label><input type="date" id="i-fecha" value="${base.fecha || hoyLima()}" max="${hoyLima()}" ${esSup() ? '' : 'min="' + new Date(Date.now() - 3 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Lima' }) + '"'}></div>
+     <div><label>Horas *</label><input id="i-horas" type="number" step="0.25" min="0.25" max="12" value="${base.horas ?? ''}"></div></div>
+   <div style="margin-top:8px"><label>Detalle (opcional)</label><input id="i-det" placeholder="Ej. limpieza de mesas y orden de repuestos"></div>
+   <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end"><button id="i-x">Cancelar</button><button class="pri" id="i-ok">Guardar</button></div>`);
+  $('#i-x').onclick = cerrarModal;
+  $('#i-ok').onclick = async () => {
+    const cat = ACT_INTERNAS[$('#i-cat').value]; const horas = +$('#i-horas').value; const det = $('#i-det').value.trim();
+    if (!(horas > 0)) return toast('Indica las horas');
+    const reg = { ot_id: pi.id, ingreso_id: null, fecha: $('#i-fecha').value, componente_id: null, numero_serie: null, equipo: null, tipo_trabajo: cat[1], horas, estado: 'TERMINADO',
+      motivo_repeticion: 'OTRO', motivo_detalle: 'Actividad interna habitual (no es trabajo de una OT)', actividad: cat[0] + (det ? ': ' + det : ''), hallazgos: null, repuestos: null, observaciones: null };
+    if (base.tecnico_id && esSup()) reg.tecnico_id = base.tecnico_id;
+    const btn = $('#i-ok'); btn.disabled = true; btn.textContent = 'Guardando…';
+    const { error } = await sb.from('avances').insert(reg);
+    if (error) { btn.disabled = false; btn.textContent = 'Guardar'; return toast(error.message, 6000); }
+    cerrarModal(); toast('Actividad interna guardada'); despues && despues();
+  };
+}
+
 // ---------- Mi día ----------
 async function miDia(fecha) {
   fecha = fecha || hoyLima();
@@ -297,8 +349,8 @@ async function miDia(fecha) {
   $('#app').innerHTML = `<h1>${verTodos ? 'Actividades del día' : 'Mi día'}</h1>
    <div class="card row no-print"><div><label>Fecha</label><input type="date" id="f-fecha" value="${fecha}" max="${hoyLima()}"></div>
    ${verTodos ? `<div><label>Técnico</label><select id="f-tec"><option value="">Todos</option>${tecnicos.map(t => `<option value="${t.id}">${esc(titleCase(t.nombre))}</option>`).join('')}</select></div>` : ''}
-   <div style="flex:0 0 auto"><button class="pri" id="nuevo">+ Registrar avance</button></div></div>
-   <div id="banner-ot" class="no-print"></div><div id="kp" class="kpis"></div><div id="lista" style="margin-top:12px"><div class="loading">Cargando…</div></div>`;
+   <div style="flex:0 0 auto;display:flex;gap:8px"><button id="interna" type="button">+ Actividad interna</button><button class="pri" id="nuevo">+ Registrar avance</button></div></div>
+   <div id="banner-ot" class="no-print"></div><div id="banner-rev" class="no-print"></div><div id="kp" class="kpis"></div><div id="jornada" class="card jornada-card"></div><div id="lista" style="margin-top:12px"><div class="loading">Cargando…</div></div>`;
   bannerOT();
   $('#f-fecha').onchange = e => { location.hash = '#/dia/' + e.target.value; };
   const cargar = async () => {
@@ -307,11 +359,39 @@ async function miDia(fecha) {
     const { data: avs } = await q; const fotos = await fotosFirmadas(avs || []);
     const horas = (avs || []).reduce((s, a) => s + (+a.horas || 0), 0);
     $('#kp').innerHTML = `<div class="kpi"><b>${(avs || []).length}</b>registros</div><div class="kpi"><b>${horas.toFixed(1)}</b>horas</div><div class="kpi"><b>${new Set((avs || []).map(a => a.ot_id)).size}</b>OT / PI</div>`;
+    pintarJornada(avs || [], tec);
     $('#lista').innerHTML = (avs || []).length ? avs.map(a => tarjeta(a, per, otMap, fotos)).join('') : `<div class="card muted">No hay registros para este día. Usa “Registrar avance”.</div>`;
     enlazarTarjetas($('#lista'), avs || [], cargar);
   };
+  const meta = await metaJornada(fecha); const pi = piInterno(ots);
+  // Jornada: OT / PI + actividades internas + por detallar (no se muestra como falta ni como tardanza)
+  function pintarJornada(avs, tec) {
+    const porTec = {};
+    for (const a of avs) { const t = porTec[a.tecnico_id] || (porTec[a.tecnico_id] = { ot: 0, int: 0 }); if (pi && a.ot_id === pi.id) t.int += +a.horas || 0; else t.ot += +a.horas || 0; }
+    const lista = tec ? [tec] : tecnicos.map(t => t.id);
+    const filas = lista.map(id => { const t = porTec[id] || { ot: 0, int: 0 }; return barraJornada(titleCase(per[id]?.nombre || (id === YO.id ? YO.nombre : '')), t.ot, t.int, meta); }).join('');
+    const mio = porTec[YO.id] || { ot: 0, int: 0 }; const falta = meta ? Math.max(0, meta - mio.ot - mio.int) : 0;
+    const puedeCompletar = (!verTodos || tec === YO.id) && falta >= 0.25 && fecha >= new Date(Date.now() - 3 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+    $('#jornada').innerHTML = `<h3>Jornada del día${meta ? ` · ${fmtH(meta)} h efectivas (sin refrigerio)` : ''}</h3>${filas || '<p class="muted">Sin técnicos.</p>'}
+      ${puedeCompletar ? `<div class="jornada-cerrar"><span>Te quedan <b>${fmtH(falta)} h</b> por detallar. Si fueron limpieza, orden, charlas o esperas, regístralas como actividad interna.</span><button type="button" id="cerrar-dia">Completar mi jornada</button></div>` : ''}
+      <p class="muted jornada-nota">Las horas por detallar no indican falta ni tardanza: la asistencia y la puntualidad se controlan en RR. HH. con el biométrico.</p>`;
+    const b = $('#cerrar-dia'); if (b) b.onclick = () => formInterna({ fecha, horas: Math.floor(falta * 4) / 4 }, cargar);
+  }
+  // Aviso de revisión: el supervisor revisa a diario; Gerencia puede revisar y ve lo que le falta al supervisor
+  async function bannerRevision() {
+    if (!esSup()) return;
+    const desde = new Date(Date.now() - 15 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+    const { data } = await sb.from('avances').select('id,fecha').is('revisado_at', null).gte('fecha', desde).lt('fecha', hoyLima()).order('fecha');
+    const n = (data || []).length; if (!n) return;
+    const sup = Object.values(per).filter(p => p.activo && p.rol === 'supervisor').map(p => titleCase(nombreCorto(p.nombre))).join(', ') || 'el supervisor';
+    $('#banner-rev').innerHTML = `<div class="card aviso-rev"><b>${n} registro(s) de días anteriores sin revisar</b> · el más antiguo es del ${fdate(data[0].fecha)}.
+      ${esGer() ? ` Le corresponde revisarlos a <b>${esc(sup)}</b>. Puedes revisarlos tú desde Revisión; quedará tu nombre como revisor.` : ' Revísalos cada día desde Revisión.'} <a href="#/revision">Ir a Revisión</a></div>`;
+  }
   if (verTodos) $('#f-tec').onchange = cargar;
   $('#nuevo').onclick = () => formAvance({ fecha }, cargar);
+  $('#interna').onclick = () => formInterna({ fecha }, cargar);
+  if (!pi) $('#interna').title = 'Falta crear el proyecto interno "ACTIVIDADES INTERNAS" en el Maestro';
+  bannerRevision();
   cargar();
 }
 
@@ -876,11 +956,14 @@ async function vistaReporte(fecha) {
 // ---------- revisión (supervisor / gerencia) ----------
 async function vistaRevision() {
   const per = await cargarPerfiles(); const ots = await cargarOT(); const otMap = Object.fromEntries(ots.map(o => [o.id, o]));
-  $('#app').innerHTML = `<h1>Revisión de registros</h1><p class="muted">Registros de los últimos 15 días aún no revisados.</p><div id="tl"><div class="loading">Cargando…</div></div>`;
+  const sup = Object.values(per).filter(p => p.activo && p.rol === 'supervisor').map(p => titleCase(nombreCorto(p.nombre))).join(', ') || 'el supervisor';
+  $('#app').innerHTML = `<h1>Revisión de registros</h1><p class="muted">Registros de los últimos 15 días aún no revisados. ${esGer() ? `La revisión diaria le corresponde a <b>${esc(sup)}</b>; si revisas tú, queda tu nombre como revisor.` : 'Revisa cada día los registros del equipo.'}</p><div id="rv-res"></div><div id="tl"><div class="loading">Cargando…</div></div>`;
   const cargar = async () => {
     const desde = new Date(Date.now() - 15 * 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
     const { data: avs } = await sb.from('avances').select('*, ingreso:ingresos(codigo,nombre,cliente)').is('revisado_at', null).gte('fecha', desde).order('fecha', { ascending: false });
     const fotos = await fotosFirmadas(avs || []);
+    const viejos = (avs || []).filter(a => a.fecha < hoyLima());
+    $('#rv-res').innerHTML = viejos.length ? `<div class="card aviso-rev"><b>${viejos.length} registro(s) de días anteriores siguen sin revisar</b> (el más antiguo del ${fdate(viejos[viejos.length - 1].fecha)}).</div>` : '';
     $('#tl').innerHTML = (avs || []).map(a => tarjeta(a, per, otMap, fotos, { fecha: true })).join('') || '<div class="card muted">Todo revisado. ✔</div>';
     enlazarTarjetas($('#tl'), avs || [], cargar);
   };
